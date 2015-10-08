@@ -24,8 +24,8 @@ try:
     import localization
     localization.init()
 except:
-    import gitinspector.localization
-    gitinspector.localization.init()
+    import gitinspector_plus.localization
+    gitinspector_plus.localization.init()
 
 __version__ = "0.5.0dev"
 

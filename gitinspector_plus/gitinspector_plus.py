@@ -18,46 +18,53 @@
 # You should have received a copy of the GNU General Public License
 # along with gitinspector. If not, see <http://www.gnu.org/licenses/>.
 
+from __future__ import absolute_import
 from __future__ import print_function
 from __future__ import unicode_literals
 
-import localization
+from gitinspector_plus import localization
 localization.init()
 
+import argparse
 import atexit
-import basedir
-import blame
-import changes
-import clone
-import config
-import extensions
-import filtering
-import format
-import help
-import interval
-import getopt
-import metrics
 import os
-import optval
-import outputable
-import responsibilities
 import sys
-import terminal
-import timeline
-import version
+
+from collections import namedtuple
+from gitinspector_plus.config import GitConfigArg
+from gitinspector_plus import (basedir, blame, changes, clone, config, extensions, filtering,
+                               format, interval, metrics, outputable, responsibilities, terminal,
+                               timeline)
+from gitinspector_plus.version import __version__
 
 
-class Runner:
-    def __init__(self):
-        self.hard = False
-        self.include_metrics = False
-        self.list_file_types = False
-        self.localize_output = False
-        self.repo = "."
-        self.responsibilities = False
-        self.grading = False
-        self.timeline = False
-        self.useweeks = False
+Argument = namedtuple('Argument', ('args', 'kwargs'))
+
+
+class Runner(object):
+
+    def __init__(self, repo='.', hard=False, include_metrics=False, list_file_types=False,
+                 localize_output=False, responsibilities=False, grading=False, timeline=timeline,
+                 use_weeks=False):
+        self.repo = repo
+
+        self.grading = grading
+        if self.grading:
+            self.hard = True
+            self.list_file_types = True
+            self.include_metrics = True
+            self.responsibilities = True
+            self.use_weeks = True
+            self.timeline = True
+        else:
+            self.hard = hard
+            self.list_file_types = list_file_types
+            self.include_metrics = include_metrics
+            self.responsibilities = responsibilities
+            self.use_weeks = use_weeks
+            self.timeline = timeline
+
+        self.localize_output = localize_output
 
     def output(self):
         if not self.localize_output:
@@ -74,16 +81,16 @@ class Runner:
         outputable.output(changes.ChangesOutput(self.hard))
 
         if changes.get(self.hard).get_commits():
-            outputable.output(blame.BlameOutput(changes.get(self.hard), self.hard, self.useweeks))
+            outputable.output(blame.BlameOutput(changes.get(self.hard), self.hard, self.use_weeks))
 
             if self.timeline:
-                outputable.output(timeline.Timeline(changes.get(self.hard), self.useweeks))
+                outputable.output(timeline.Timeline(changes.get(self.hard), self.use_weeks))
 
             if self.include_metrics:
                 outputable.output(metrics.Metrics())
 
             if self.responsibilities:
-                outputable.output(responsibilities.ResponsibilitiesOutput(self.hard, self.useweeks))
+                outputable.output(responsibilities.ResponsibilitiesOutput(self.hard, self.use_weeks))
 
             outputable.output(filtering.Filtering())
 
@@ -94,104 +101,160 @@ class Runner:
         os.chdir(previous_directory)
 
 
-def __check_python_version__():
+def check_python_version():
     if sys.version_info < (2, 6):
-        python_version = str(sys.version_info[0]) + "." + str(sys.version_info[1])
-        sys.exit(_("gitinspector requires at least Python 2.6 to run (version {0} was found).").format(python_version))
+        sys.exit(_('gitinspector requires at least Python 2.6 to run '
+                   '(version {0} was found).').format(sys.version))
+
+
+class ForgivingArgumentParser(argparse.ArgumentParser):
+
+    def parse_args(self, args=None, namespace=None):
+        args, argv = self.parse_known_args(args, namespace)
+        return args
 
 
 def main():
     terminal.check_terminal_encoding()
     terminal.set_stdin_encoding()
-    argv = terminal.convert_command_line_to_utf8()
-    __run__ = Runner()
+
+    check_python_version()
 
     try:
-        __opts__, __args__ = optval.gnu_getopt(argv[1:], "f:F:hHlLmrTwx:", ["exclude=", "file-types=", "format=",
-                                                         "hard:true", "help", "list-file-types:true",
-                                                         "localize-output:true", "metrics:true", "responsibilities:true",
-                                                         "since=", "grading:true", "timeline:true", "until=", "version",
-                                                         "weeks:true"])
-        for arg in __args__:
-            __run__.repo = arg
+        pre_parser = ForgivingArgumentParser(add_help=False)
+        pre_parser.add_argument('repository', metavar='REPOSITORY', nargs='?', default='.')
+        pre_args = pre_parser.parse_args()
 
-        #Try to clone the repo or return the same directory and bail out.
-        __run__.repo = clone.create(__run__.repo)
+        parser = argparse.ArgumentParser(
+            description='List information about the repository in REPOSITORY. If no repository is '
+                        'specified, the current directory is used. If multiple repositories are '
+                        'given, information will be fetched from the last repository specified.',
+            epilog='gitinspector_plus will filter statistics to only include commits that modify, '
+                   'add or remove one of the specified extensions, see -f or --file-types for '
+                   'more information. gitinspector_plus requires that the git executable is '
+                   'available in your PATH. Please, report gitinspector_plus bugs to '
+                   'dmugtasimov@gmail.com.',
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+            parents=(pre_parser,))
 
-        #We need the repo above to be set before we read the git config.
-        config.init(__run__)
-        clear_x_on_next_pass = True
+        arguments = (
+            Argument(args=('-f', '--file-types'),
+                     kwargs=dict(metavar='EXTENSIONS', dest='file_types',
+                                 default='java,c,cc,cpp,h,hh,hpp,py,glsl,rb,js,sql',
+                                 help='a comma separated list of file extensions to include when '
+                                      'computing statistics. Specifying * includes files with no '
+                                      'extension, while ** includes all files')),
+            Argument(args=('-F', '--format'),
+                     kwargs=dict(dest='format', default='text',
+                                 choices=('html', 'htmlembedded', 'text', 'xml'),
+                                 help='define in which format output should be generated')),
+            Argument(args=('--grading',),
+                     kwargs=dict(action='store_true',
+                                 help='show statistics and information in a way that is formatted '
+                                      'for grading of student projects; this is the same as '
+                                      'supplying the options -HlmrTw')),
+            Argument(args=('-H', '--hard'),
+                     kwargs=dict(action='store_true', dest='hard',
+                                 help='dtrack rows and look for duplicates harder; this can be '
+                                      'quite slow with big repositories')),
+            Argument(args=('-l', '--list-file-types'),
+                     kwargs=dict(action='store_true', dest='list_file_types',
+                                 help='list all the file extensions available in the current '
+                                      'branch of the repository')),
+            Argument(args=('-L', '--localize-output'),
+                     kwargs=dict(action='store_true', dest='localize_output',
+                                 help='list all the file extensions available in the current '
+                                      'branch of the repository')),
+            Argument(args=('-m', '--metrics'),
+                     kwargs=dict(action='store_true', dest='metrics',
+                                 help='include checks for certain metrics during the analysis of '
+                                      'commits')),
+            Argument(args=('-r', '--responsibilities'),
+                     kwargs=dict(action='store_true', dest='responsibilities',
+                                 help='show which files the different authors seem most '
+                                      'responsible for')),
+            Argument(args=('--since',),
+                     kwargs=dict(metavar='DATE', default=None,
+                                 help='only show statistics for commits more recent than '
+                                      'a specific date')),
+            Argument(args=('-T', '--timeline'),
+                     kwargs=dict(action='store_true', dest='timeline',
+                                 help='show commit timeline, including author names')),
+            Argument(args=('--until',),
+                     kwargs=dict(metavar='DATE', default=None,
+                                 help='only show statistics for commits older than a specific '
+                                      'date')),
+            Argument(args=('-w', '--weeks'),
+                     kwargs=dict(action='store_true', dest='weeks',
+                                 help='show all statistical information in weeks instead of in '
+                                      'months')),
+            Argument(args=('-x', '--exclude'),
+                     kwargs=dict(metavar='PATTERN', action='append', dest='exclude',
+                                 help='an exclusion pattern describing the file paths, revisions, '
+                                      'revisions with certain commit messages, author names or '
+                                      'author emails that should be excluded from the statistics; '
+                                      'can be specified multiple times'))
+        )
 
-        for o, a in __opts__:
-            if o in("-h", "--help"):
-                help.output()
-                sys.exit(0)
-            elif o in("-f", "--file-types"):
-                extensions.define(a)
-            elif o in("-F", "--format"):
-                if not format.select(a):
-                    raise format.InvalidFormatError(_("specified output format not supported."))
-            elif o == "-H":
-                __run__.hard = True
-            elif o == "--hard":
-                __run__.hard = optval.get_boolean_argument(a)
-            elif o == "-l":
-                __run__.list_file_types = True
-            elif o == "--list-file-types":
-                __run__.list_file_types = optval.get_boolean_argument(a)
-            elif o == "-L":
-                __run__.localize_output = True
-            elif o == "--localize-output":
-                __run__.localize_output = optval.get_boolean_argument(a)
-            elif o == "-m":
-                __run__.include_metrics = True
-            elif o == "--metrics":
-                __run__.include_metrics = optval.get_boolean_argument(a)
-            elif o == "-r":
-                __run__.responsibilities = True
-            elif o == "--responsibilities":
-                __run__.responsibilities = optval.get_boolean_argument(a)
-            elif o == "--since":
-                interval.set_since(a)
-            elif o == "--version":
-                version.output()
-                sys.exit(0)
-            elif o == "--grading":
-                grading = optval.get_boolean_argument(a)
-                __run__.include_metrics = grading
-                __run__.list_file_types = grading
-                __run__.responsibilities = grading
-                __run__.grading = grading
-                __run__.hard = grading
-                __run__.timeline = grading
-                __run__.useweeks = grading
-            elif o == "-T":
-                __run__.timeline = True
-            elif o == "--timeline":
-                __run__.timeline = optval.get_boolean_argument(a)
-            elif o == "--until":
-                interval.set_until(a)
-            elif o == "-w":
-                __run__.useweeks = True
-            elif o == "--weeks":
-                __run__.useweeks = optval.get_boolean_argument(a)
-            elif o in("-x", "--exclude"):
-                if clear_x_on_next_pass:
-                    clear_x_on_next_pass = False
-                    filtering.clear()
-                filtering.add(a)
+        git_config_args = []
+        for argument in arguments:
+            parser.add_argument(*argument.args, **argument.kwargs)
 
-        __check_python_version__()
-        __run__.output()
+            option_strings = filter(lambda s: s.startswith('--'), argument.args)
+            if len(option_strings) == 1:
+                option_string = option_strings[0]
+            else:
+                raise ValueError('Could not get option string for '
+                                 'option: {}'.format(argument.args))
 
-    except (filtering.InvalidRegExpError, format.InvalidFormatError, optval.InvalidOptionArgument, getopt.error) as exception:
+            action = argument.kwargs.get('action')
+            if action in ('store_true', 'store_false'):
+                action_type = bool
+            else:
+                action_type = None
+            git_config_args.append(GitConfigArg(name=option_string.lstrip('-'), type=action_type))
+
+        parser.add_argument('--version', action='version', version=__version__)
+
+        # Try to clone the repo or return the same directory and bail out
+        repo = clone.create(pre_args.repository)
+        git_configuration = config.get_git_configuration(repo, git_config_args)
+        parser.set_defaults(**git_configuration)
+
+        args = parser.parse_args()
+
+        runner = Runner(repo=repo, grading=args.grading, hard=args.hard,
+                        list_file_types=args.list_file_types, include_metrics=args.metrics,
+                        responsibilities=args.responsibilities, use_weeks=args.weeks,
+                        timeline=args.timeline, localize_output=args.localize_output)
+
+        extensions.define(args.file_types)
+        if not format.select(args.format):
+            raise format.InvalidFormatError(_('specified output format not supported.'))
+
+        if args.since:
+            interval.set_since(args.since)
+
+        if args.until:
+            interval.set_until(args.until)
+
+        if args.exclude:
+            filtering.clear()
+            for item in args.exclude:
+                filtering.add(item)
+
+    except (filtering.InvalidRegExpError, format.InvalidFormatError) as exception:
         print(sys.argv[0], "\b:", exception.msg, file=sys.stderr)
-        print(_("Try `{0} --help' for more information.").format(sys.argv[0]), file=sys.stderr)
-        sys.exit(2)
+        print(_('Try: {0} --help for more information.').format(sys.argv[0]), file=sys.stderr)
+        return 2
+
+    runner.output()
+
 
 @atexit.register
 def cleanup():
     clone.delete()
 
+
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

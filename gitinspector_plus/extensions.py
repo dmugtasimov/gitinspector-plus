@@ -29,12 +29,15 @@ DEFAULT_EXTENSIONS = ["java", "c", "cc", "cpp", "h", "hh", "hpp", "py", "glsl", 
 __extensions__ = DEFAULT_EXTENSIONS
 __located_extensions__ = set()
 
+
 def get():
     return __extensions__
+
 
 def define(string):
     global __extensions__
     __extensions__ = string.split(",")
+
 
 def add_located(string):
     if len(string) == 0:
@@ -44,6 +47,7 @@ def add_located(string):
 
 EXTENSIONS_INFO_TEXT = N_("The extensions below were found in the repository history")
 EXTENSIONS_MARKED_TEXT = N_("(extensions used during statistical analysis are marked)")
+
 
 class Extensions(Outputable):
     @staticmethod
