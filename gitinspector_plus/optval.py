@@ -20,10 +20,12 @@
 from __future__ import unicode_literals
 import getopt
 
+
 class InvalidOptionArgument(Exception):
     def __init__(self, msg):
         super(InvalidOptionArgument, self).__init__(msg)
         self.msg = msg
+
 
 def __find_arg_in_options__(arg, options):
     for opt in options:
@@ -31,6 +33,7 @@ def __find_arg_in_options__(arg, options):
             return opt
 
     return None
+
 
 def __find_options_to_extend__(long_options):
     options_to_extend = []
@@ -43,8 +46,8 @@ def __find_options_to_extend__(long_options):
 
     return options_to_extend
 
-# This is a duplicate of gnu_getopt, but with support for optional arguments in long options, in the form; "arg:default_value".
 
+# This is a duplicate of gnu_getopt, but with support for optional arguments in long options, in the form; "arg:default_value".
 def gnu_getopt(args, options, long_options):
     options_to_extend = __find_options_to_extend__(long_options)
 
@@ -54,6 +57,7 @@ def gnu_getopt(args, options, long_options):
             args[num] = arg + "=" + opt[1]
 
     return getopt.gnu_getopt(args, options, long_options)
+
 
 def get_boolean_argument(arg):
     if isinstance(arg, bool):

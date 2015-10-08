@@ -1,4 +1,5 @@
-gitnspector is a statistical analysis tool for git repositories.
+gitnspector_plus is a statistical analysis tool for git repositories based on gitinspector by
+Ejwa Software.
 
 The defaut analysis shows general statistics per author, which can be
 complemented with a timeline analysis that shows the workload and activity of

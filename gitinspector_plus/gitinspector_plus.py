@@ -46,6 +46,7 @@ import terminal
 import timeline
 import version
 
+
 class Runner:
     def __init__(self):
         self.hard = False
@@ -92,10 +93,12 @@ class Runner:
         format.output_footer()
         os.chdir(previous_directory)
 
+
 def __check_python_version__():
     if sys.version_info < (2, 6):
         python_version = str(sys.version_info[0]) + "." + str(sys.version_info[1])
         sys.exit(_("gitinspector requires at least Python 2.6 to run (version {0} was found).").format(python_version))
+
 
 def main():
     terminal.check_terminal_encoding()
