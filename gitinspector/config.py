@@ -27,64 +27,64 @@ import os
 import subprocess
 
 def __read_git_config__(repo, variable):
-	previous_directory = os.getcwd()
-	os.chdir(repo)
-	setting = subprocess.Popen(["git", "config", "inspector." + variable], bufsize=1, stdout=subprocess.PIPE).stdout
-	os.chdir(previous_directory)
+    previous_directory = os.getcwd()
+    os.chdir(repo)
+    setting = subprocess.Popen(["git", "config", "inspector." + variable], bufsize=1, stdout=subprocess.PIPE).stdout
+    os.chdir(previous_directory)
 
-	try:
-		setting = setting.readlines()[0]
-		setting = setting.decode("utf-8", "replace").strip()
-	except IndexError:
-		setting = ""
+    try:
+        setting = setting.readlines()[0]
+        setting = setting.decode("utf-8", "replace").strip()
+    except IndexError:
+        setting = ""
 
-	return setting
+    return setting
 
 def __read_git_config_bool__(repo, variable):
-	try:
-		variable = __read_git_config__(repo, variable)
-		return optval.get_boolean_argument(False if variable == "" else variable)
-	except optval.InvalidOptionArgument:
-		return False
+    try:
+        variable = __read_git_config__(repo, variable)
+        return optval.get_boolean_argument(False if variable == "" else variable)
+    except optval.InvalidOptionArgument:
+        return False
 
 def __read_git_config_string__(repo, variable):
-	string = __read_git_config__(repo, variable)
-	return (True, string) if len(string) > 0 else (False, None)
+    string = __read_git_config__(repo, variable)
+    return (True, string) if len(string) > 0 else (False, None)
 
 def init(run):
-	var = __read_git_config_string__(run.repo, "file-types")
-	if var[0]:
-		extensions.define(var[1])
+    var = __read_git_config_string__(run.repo, "file-types")
+    if var[0]:
+        extensions.define(var[1])
 
-	var = __read_git_config_string__(run.repo, "exclude")
-	if var[0]:
-		filtering.add(var[1])
+    var = __read_git_config_string__(run.repo, "exclude")
+    if var[0]:
+        filtering.add(var[1])
 
-	var = __read_git_config_string__(run.repo, "format")
-	if var[0] and not format.select(var[1]):
-		raise format.InvalidFormatError(_("specified output format not supported."))
+    var = __read_git_config_string__(run.repo, "format")
+    if var[0] and not format.select(var[1]):
+        raise format.InvalidFormatError(_("specified output format not supported."))
 
-	run.hard = __read_git_config_bool__(run.repo, "hard")
-	run.list_file_types = __read_git_config_bool__(run.repo, "list-file-types")
-	run.localize_output = __read_git_config_bool__(run.repo, "localize-output")
-	run.metrics = __read_git_config_bool__(run.repo, "metrics")
-	run.responsibilities = __read_git_config_bool__(run.repo, "responsibilities")
-	run.useweeks = __read_git_config_bool__(run.repo, "weeks")
+    run.hard = __read_git_config_bool__(run.repo, "hard")
+    run.list_file_types = __read_git_config_bool__(run.repo, "list-file-types")
+    run.localize_output = __read_git_config_bool__(run.repo, "localize-output")
+    run.metrics = __read_git_config_bool__(run.repo, "metrics")
+    run.responsibilities = __read_git_config_bool__(run.repo, "responsibilities")
+    run.useweeks = __read_git_config_bool__(run.repo, "weeks")
 
-	var = __read_git_config_string__(run.repo, "since")
-	if var[0]:
-		interval.set_since(var[1])
+    var = __read_git_config_string__(run.repo, "since")
+    if var[0]:
+        interval.set_since(var[1])
 
-	var = __read_git_config_string__(run.repo, "until")
-	if var[0]:
-		interval.set_until(var[1])
+    var = __read_git_config_string__(run.repo, "until")
+    if var[0]:
+        interval.set_until(var[1])
 
-	run.timeline = __read_git_config_bool__(run.repo, "timeline")
+    run.timeline = __read_git_config_bool__(run.repo, "timeline")
 
-	if __read_git_config_bool__(run.repo, "grading"):
-		run.hard = True
-		run.list_file_types = True
-		run.metrics = True
-		run.responsibilities = True
-		run.timeline = True
-		run.useweeks = True
+    if __read_git_config_bool__(run.repo, "grading"):
+        run.hard = True
+        run.list_file_types = True
+        run.metrics = True
+        run.responsibilities = True
+        run.timeline = True
+        run.useweeks = True

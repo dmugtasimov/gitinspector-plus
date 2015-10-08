@@ -21,9 +21,9 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 try:
-	import basedir
+    import basedir
 except:
-	import gitinspector.basedir as basedir
+    import gitinspector.basedir as basedir
 
 import gettext
 import locale
@@ -37,64 +37,64 @@ __translation__ = None
 
 #Dummy function used to handle string constants
 def N_(message):
-	return message
+    return message
 
 def init():
-	global __enabled__
-	global __installed__
-	global __translation__
+    global __enabled__
+    global __installed__
+    global __translation__
 
-	if not __installed__:
-		try:
-			locale.setlocale(locale.LC_ALL, "")
-		except locale.Error:
-			__translation__ = gettext.NullTranslations()
-		else:
-			lang = locale.getlocale()
+    if not __installed__:
+        try:
+            locale.setlocale(locale.LC_ALL, "")
+        except locale.Error:
+            __translation__ = gettext.NullTranslations()
+        else:
+            lang = locale.getlocale()
 
-			#Fix for non-POSIX-compliant systems (Windows et al.).
-			if os.getenv('LANG') is None:
-				lang = locale.getdefaultlocale()
+            #Fix for non-POSIX-compliant systems (Windows et al.).
+            if os.getenv('LANG') is None:
+                lang = locale.getdefaultlocale()
 
-				if lang[0]:
-					os.environ['LANG'] = lang[0]
+                if lang[0]:
+                    os.environ['LANG'] = lang[0]
 
-			if lang[0] is not None:
-				filename = basedir.get_basedir() + "/translations/messages_%s.mo" % lang[0][0:2]
+            if lang[0] is not None:
+                filename = basedir.get_basedir() + "/translations/messages_%s.mo" % lang[0][0:2]
 
-				try:
-					__translation__ = gettext.GNUTranslations(open(filename, "rb"))
-				except IOError:
-					__translation__ = gettext.NullTranslations()
-			else:
-				print("WARNING: Localization disabled because the system language could not be determined.", file=sys.stderr)
-				__translation__ = gettext.NullTranslations()
+                try:
+                    __translation__ = gettext.GNUTranslations(open(filename, "rb"))
+                except IOError:
+                    __translation__ = gettext.NullTranslations()
+            else:
+                print("WARNING: Localization disabled because the system language could not be determined.", file=sys.stderr)
+                __translation__ = gettext.NullTranslations()
 
-		__enabled__ = True
-		__installed__ = True
-		__translation__.install(True)
+        __enabled__ = True
+        __installed__ = True
+        __translation__.install(True)
 
 def get_date():
-	if __enabled__ and isinstance(__translation__, gettext.GNUTranslations):
-		date = time.strftime("%x")
+    if __enabled__ and isinstance(__translation__, gettext.GNUTranslations):
+        date = time.strftime("%x")
 
-		if hasattr(date, 'decode'):
-			date = date.decode("utf-8", "replace")
+        if hasattr(date, 'decode'):
+            date = date.decode("utf-8", "replace")
 
-		return date
-	else:
-		return time.strftime("%Y/%m/%d")
+        return date
+    else:
+        return time.strftime("%Y/%m/%d")
 
 def enable():
-	if isinstance(__translation__, gettext.GNUTranslations):
-		__translation__.install(True)
+    if isinstance(__translation__, gettext.GNUTranslations):
+        __translation__.install(True)
 
-		global __enabled__
-		__enabled__ = True
+        global __enabled__
+        __enabled__ = True
 
 def disable():
-	global __enabled__
-	__enabled__ = False
+    global __enabled__
+    __enabled__ = False
 
-	if __installed__:
-		gettext.NullTranslations().install(True)
+    if __installed__:
+        gettext.NullTranslations().install(True)
