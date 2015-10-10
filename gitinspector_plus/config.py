@@ -18,73 +18,53 @@
 # along with gitinspector. If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import unicode_literals
-import extensions
-import filtering
-import format
-import interval
-import optval
+from collections import namedtuple
 import os
 import subprocess
 
-def __read_git_config__(repo, variable):
+
+BOOLEAN_REPRESENTATIONS = {'1': True, 'yes': True, 'true': True, 't': True, 'on': True,
+                           '0': False, 'no': False, 'false': False, 'f': False, 'off': False}
+
+GitConfigArg = namedtuple('GitConfigArg', ('name', 'type'))
+
+
+def read_git_config_variable(repo, variable):
     previous_directory = os.getcwd()
     os.chdir(repo)
-    setting = subprocess.Popen(["git", "config", "inspector." + variable], bufsize=1, stdout=subprocess.PIPE).stdout
+    output = subprocess.Popen(('git', 'config', 'gitinspector-plus.' + variable),
+                              bufsize=1, stdout=subprocess.PIPE).stdout
     os.chdir(previous_directory)
 
     try:
-        setting = setting.readlines()[0]
-        setting = setting.decode("utf-8", "replace").strip()
+        setting = output.readlines()[0]
     except IndexError:
-        setting = ""
+        return None
 
-    return setting
+    return setting.decode('utf-8', 'replace').strip()
 
-def __read_git_config_bool__(repo, variable):
+
+def convert_to_boolean(value):
     try:
-        variable = __read_git_config__(repo, variable)
-        return optval.get_boolean_argument(False if variable == "" else variable)
-    except optval.InvalidOptionArgument:
-        return False
+        return BOOLEAN_REPRESENTATIONS[value.lower()]
+    except KeyError:
+        raise ValueError(_("The given option argument is not a valid boolean."))
 
-def __read_git_config_string__(repo, variable):
-    string = __read_git_config__(repo, variable)
-    return (True, string) if len(string) > 0 else (False, None)
 
-def init(run):
-    var = __read_git_config_string__(run.repo, "file-types")
-    if var[0]:
-        extensions.define(var[1])
+def get_git_configuration(repo, args):
+    config_dict = {}
+    for arg in args:
+        value = read_git_config_variable(repo, arg.name)
+        if value is None:
+            continue
 
-    var = __read_git_config_string__(run.repo, "exclude")
-    if var[0]:
-        filtering.add(var[1])
+        if arg.type in (None, str, unicode):
+            pass
+        elif arg.type is bool:
+            value = convert_to_boolean(value)
+        else:
+            raise ValueError('Unknown argument type: {}'.format(arg.type))
 
-    var = __read_git_config_string__(run.repo, "format")
-    if var[0] and not format.select(var[1]):
-        raise format.InvalidFormatError(_("specified output format not supported."))
+        config_dict[arg.name] = value
 
-    run.hard = __read_git_config_bool__(run.repo, "hard")
-    run.list_file_types = __read_git_config_bool__(run.repo, "list-file-types")
-    run.localize_output = __read_git_config_bool__(run.repo, "localize-output")
-    run.metrics = __read_git_config_bool__(run.repo, "metrics")
-    run.responsibilities = __read_git_config_bool__(run.repo, "responsibilities")
-    run.useweeks = __read_git_config_bool__(run.repo, "weeks")
-
-    var = __read_git_config_string__(run.repo, "since")
-    if var[0]:
-        interval.set_since(var[1])
-
-    var = __read_git_config_string__(run.repo, "until")
-    if var[0]:
-        interval.set_until(var[1])
-
-    run.timeline = __read_git_config_bool__(run.repo, "timeline")
-
-    if __read_git_config_bool__(run.repo, "grading"):
-        run.hard = True
-        run.list_file_types = True
-        run.metrics = True
-        run.responsibilities = True
-        run.timeline = True
-        run.useweeks = True
+    return config_dict
