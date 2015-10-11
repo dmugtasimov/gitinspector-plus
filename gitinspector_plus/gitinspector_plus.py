@@ -25,6 +25,7 @@ from __future__ import unicode_literals
 from gitinspector_plus import localization
 localization.init()
 
+import logging
 import argparse
 import atexit
 import os
@@ -45,7 +46,7 @@ class Runner(object):
 
     def __init__(self, repo='.', hard=False, include_metrics=False, list_file_types=False,
                  localize_output=False, responsibilities=False, grading=False, timeline=timeline,
-                 use_weeks=False):
+                 use_weeks=False, format='text'):
         self.repo = repo
 
         self.grading = grading
@@ -65,8 +66,16 @@ class Runner(object):
             self.timeline = timeline
 
         self.localize_output = localize_output
+        self.format = format
+
+    def output_new(self):
+        pass
 
     def output(self):
+        #if self.format == 'text':
+        #    self.output_new()
+        #    return
+
         if not self.localize_output:
             localization.disable()
 
@@ -80,17 +89,19 @@ class Runner(object):
         format.output_header()
         outputable.output(changes.ChangesOutput(self.hard))
 
-        if changes.get(self.hard).get_commits():
-            outputable.output(blame.BlameOutput(changes.get(self.hard), self.hard, self.use_weeks))
+        all_changes = changes.get(self.hard)
+        if all_changes.get_commits():
+            outputable.output(blame.BlameOutput(all_changes, self.hard, self.use_weeks))
 
             if self.timeline:
-                outputable.output(timeline.Timeline(changes.get(self.hard), self.use_weeks))
+                outputable.output(timeline.Timeline(all_changes, self.use_weeks))
 
             if self.include_metrics:
                 outputable.output(metrics.Metrics())
 
             if self.responsibilities:
-                outputable.output(responsibilities.ResponsibilitiesOutput(self.hard, self.use_weeks))
+                outputable.output(responsibilities.ResponsibilitiesOutput(self.hard,
+                                                                          self.use_weeks))
 
             outputable.output(filtering.Filtering())
 
@@ -102,8 +113,8 @@ class Runner(object):
 
 
 def check_python_version():
-    if sys.version_info < (2, 6):
-        sys.exit(_('gitinspector requires at least Python 2.6 to run '
+    if sys.version_info < (2, 7):
+        sys.exit(_('gitinspector requires at least Python 2.7.x to run '
                    '(version {0} was found).').format(sys.version))
 
 
@@ -121,10 +132,6 @@ def main():
     check_python_version()
 
     try:
-        pre_parser = ForgivingArgumentParser(add_help=False)
-        pre_parser.add_argument('repository', metavar='REPOSITORY', nargs='?', default='.')
-        pre_args = pre_parser.parse_args()
-
         parser = argparse.ArgumentParser(
             description='List information about the repository in REPOSITORY. If no repository is '
                         'specified, the current directory is used. If multiple repositories are '
@@ -134,9 +141,9 @@ def main():
                    'more information. gitinspector_plus requires that the git executable is '
                    'available in your PATH. Please, report gitinspector_plus bugs to '
                    'dmugtasimov@gmail.com.',
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-            parents=(pre_parser,))
+            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
+        parser.add_argument('repository', metavar='REPOSITORY', nargs='?', default='.')
         arguments = (
             Argument(args=('-f', '--file-types'),
                      kwargs=dict(metavar='EXTENSIONS', dest='file_types',
@@ -193,7 +200,8 @@ def main():
                                  help='an exclusion pattern describing the file paths, revisions, '
                                       'revisions with certain commit messages, author names or '
                                       'author emails that should be excluded from the statistics; '
-                                      'can be specified multiple times'))
+                                      'can be specified multiple times')),
+            Argument(args=('--log-level',), kwargs=dict(dest='log_level', default='INFO')),
         )
 
         git_config_args = []
@@ -216,17 +224,21 @@ def main():
 
         parser.add_argument('--version', action='version', version=__version__)
 
+        args = parser.parse_args()
         # Try to clone the repo or return the same directory and bail out
-        repo = clone.create(pre_args.repository)
+        repo = clone.create(args.repository)
         git_configuration = config.get_git_configuration(repo, git_config_args)
         parser.set_defaults(**git_configuration)
 
         args = parser.parse_args()
 
+        logging.basicConfig(level=args.log_level, format='> %(message)s')
+
         runner = Runner(repo=repo, grading=args.grading, hard=args.hard,
                         list_file_types=args.list_file_types, include_metrics=args.metrics,
                         responsibilities=args.responsibilities, use_weeks=args.weeks,
-                        timeline=args.timeline, localize_output=args.localize_output)
+                        timeline=args.timeline, localize_output=args.localize_output,
+                        format=args.format)
 
         extensions.define(args.file_types)
         if not format.select(args.format):

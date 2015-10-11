@@ -19,21 +19,28 @@
 
 from __future__ import print_function
 from __future__ import unicode_literals
-from localization import N_
-from outputable import Outputable
+from __future__ import absolute_import
+from gitinspector_plus.localization import N_
+from gitinspector_plus.outputable import Outputable
 import datetime
-import extensions
-import filtering
-import format
-import gravatar
-import interval
 import json
 import multiprocessing
 import os
 import subprocess
-import terminal
 import textwrap
 import threading
+
+
+from gitinspector_plus import extensions
+from gitinspector_plus import filtering
+from gitinspector_plus import format
+from gitinspector_plus import gravatar
+from gitinspector_plus import interval
+from gitinspector_plus import terminal
+
+
+from gitinspector_plus.utils import run_git_rev_list_command, run_git_log_command
+
 
 CHANGES_PER_THREAD = 200
 NUM_THREADS = multiprocessing.cpu_count()
@@ -101,83 +108,65 @@ class Commit:
     def is_commit_line(string):
         return string.split("|").__len__() == 4
 
+
 class AuthorInfo:
     email = None
     insertions = 0
     deletions = 0
     commits = 0
 
-class ChangesThread(threading.Thread):
-    def __init__(self, hard, changes, first_hash, second_hash, offset):
-        __thread_lock__.acquire() # Lock controlling the number of threads running
-        threading.Thread.__init__(self)
 
-        self.hard = hard
-        self.changes = changes
-        self.first_hash = first_hash
-        self.second_hash = second_hash
-        self.offset = offset
+def read_commits(hard, changes, commit_hash):
+    lines = run_git_log_command(
+        filter(None, (('--reverse', '--pretty=%cd|%H|%aN|%aE',
+                      '--stat=100000,8192', '--no-merges', '-w', interval.get_since(),
+                      interval.get_until(), '--date=short') +
+                      (('-C', '-C', '-M') if hard else ()) + (commit_hash + '..HEAD',))))
 
-    @staticmethod
-    def create(hard, changes, first_hash, second_hash, offset):
-        thread = ChangesThread(hard, changes, first_hash, second_hash, offset)
-        thread.daemon = True
-        thread.start()
+    commit = None
+    found_valid_extension = False
+    is_filtered = False
+    commits = []
 
-    def run(self):
-        git_log_r = subprocess.Popen(filter(None, ["git", "log", "--reverse", "--pretty=%cd|%H|%aN|%aE",
-                                     "--stat=100000,8192", "--no-merges", "-w", interval.get_since(),
-                                     interval.get_until(), "--date=short"] + (["-C", "-C", "-M"] if self.hard else []) +
-                                     [self.first_hash + self.second_hash]), bufsize=1, stdout=subprocess.PIPE).stdout
-        lines = git_log_r.readlines()
-        git_log_r.close()
+    for i in lines:
+        j = i.strip().decode("unicode_escape", "ignore")
+        j = j.encode("latin-1", "replace")
+        j = j.decode("utf-8", "replace")
 
-        commit = None
-        found_valid_extension = False
-        is_filtered = False
-        commits = []
+        if Commit.is_commit_line(j):
+            (author, email) = Commit.get_author_and_email(j)
+            changes.emails_by_author[author] = email
+            changes.authors_by_email[email] = author
 
-        __changes_lock__.acquire() # Global lock used to protect calls from here...
+        if Commit.is_commit_line(j) or i is lines[-1]:
+            if found_valid_extension:
+                commits.append(commit)
 
-        for i in lines:
-            j = i.strip().decode("unicode_escape", "ignore")
-            j = j.encode("latin-1", "replace")
-            j = j.decode("utf-8", "replace")
+            found_valid_extension = False
+            is_filtered = False
+            commit = Commit(j)
 
-            if Commit.is_commit_line(j):
-                (author, email) = Commit.get_author_and_email(j)
-                self.changes.emails_by_author[author] = email
-                self.changes.authors_by_email[email] = author
+            if Commit.is_commit_line(j) and \
+               (filtering.set_filtered(commit.author, "author") or \
+               filtering.set_filtered(commit.email, "email") or \
+               filtering.set_filtered(commit.sha, "revision") or \
+               filtering.set_filtered(commit.sha, "message")):
+                is_filtered = True
 
-            if Commit.is_commit_line(j) or i is lines[-1]:
-                if found_valid_extension:
-                    commits.append(commit)
+        if FileDiff.is_filediff_line(j) and not \
+           filtering.set_filtered(FileDiff.get_filename(j)) and not is_filtered:
+            extensions.add_located(FileDiff.get_extension(j))
 
-                found_valid_extension = False
-                is_filtered = False
-                commit = Commit(j)
+            if FileDiff.is_valid_extension(j):
+                found_valid_extension = True
+                filediff = FileDiff(j)
+                commit.add_filediff(filediff)
 
-                if Commit.is_commit_line(j) and \
-                   (filtering.set_filtered(commit.author, "author") or \
-                   filtering.set_filtered(commit.email, "email") or \
-                   filtering.set_filtered(commit.sha, "revision") or \
-                   filtering.set_filtered(commit.sha, "message")):
-                    is_filtered = True
+    return commits
 
-            if FileDiff.is_filediff_line(j) and not \
-               filtering.set_filtered(FileDiff.get_filename(j)) and not is_filtered:
-                extensions.add_located(FileDiff.get_extension(j))
 
-                if FileDiff.is_valid_extension(j):
-                    found_valid_extension = True
-                    filediff = FileDiff(j)
-                    commit.add_filediff(filediff)
+class Changes(object):
 
-        self.changes.commits[self.offset // CHANGES_PER_THREAD] = commits
-        __changes_lock__.release() # ...to here.
-        __thread_lock__.release() # Lock controlling the number of threads running
-
-class Changes:
     authors = {}
     authors_dateinfo = {}
     authors_by_email = {}
@@ -185,35 +174,15 @@ class Changes:
 
     def __init__(self, hard):
         self.commits = []
-        git_log_hashes_r = subprocess.Popen(filter(None, ["git", "rev-list", "--reverse", "--no-merges",
-                                            interval.get_since(), interval.get_until(), "HEAD"]), bufsize=1,
-                                            stdout=subprocess.PIPE).stdout
-        lines = git_log_hashes_r.readlines()
-        git_log_hashes_r.close()
+        commit_hashes = run_git_rev_list_command(
+            filter(None, ('--reverse', '--no-merges', interval.get_since(), interval.get_until(),
+                          'HEAD')))
 
-        if len(lines) > 0:
-            self.commits = [None] * (len(lines) // CHANGES_PER_THREAD + 1)
-            first_hash = ""
+        if commit_hashes:
+            self.commits = read_commits(hard, self, commit_hashes[0])
 
-            for i, entry in enumerate(lines):
-                if i % CHANGES_PER_THREAD == CHANGES_PER_THREAD - 1:
-                    entry = entry.decode("utf-8", "replace").strip()
-                    second_hash = entry
-                    ChangesThread.create(hard, self, first_hash, second_hash, i)
-                    first_hash = entry + ".."
-            else:
-                entry = entry.decode("utf-8", "replace").strip()
-                second_hash = entry
-                ChangesThread.create(hard, self, first_hash, second_hash, i)
-
-        # Make sure all threads have completed.
-        for i in range(0, NUM_THREADS):
-            __thread_lock__.acquire()
-
-        self.commits = [item for sublist in self.commits for item in sublist]
-
-        if len(self.commits) > 0:
-            if interval.has_interval() and len(self.commits) > 0:
+        if self.commits:
+            if interval.has_interval():
                 interval.set_ref(self.commits[-1].sha)
 
             self.first_commit_date = datetime.date(int(self.commits[0].date[0:4]), int(self.commits[0].date[5:7]),
@@ -262,6 +231,7 @@ class Changes:
 
 __changes__ = None
 
+
 def get(hard):
     global __changes__
     if __changes__ == None:
@@ -269,8 +239,10 @@ def get(hard):
 
     return __changes__
 
+
 HISTORICAL_INFO_TEXT = N_("The following historical commit information, by author, was found in the repository")
 NO_COMMITED_FILES_TEXT = N_("No commited files with the specified extensions were found")
+
 
 class ChangesOutput(Outputable):
     def __init__(self, hard):

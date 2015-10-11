@@ -21,13 +21,15 @@ import os
 import subprocess
 import sys
 
+
 def get_basedir():
-    if hasattr(sys,'frozen'): # exists when running via py2exe
+    if hasattr(sys, 'frozen'):  # exists when running via py2exe
         return sys.prefix
     else:
         return os.path.dirname(os.path.realpath(__file__))
 
 __git_basedir__ = None
+
 
 def get_basedir_git():
     global __git_basedir__

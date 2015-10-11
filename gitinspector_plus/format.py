@@ -35,10 +35,12 @@ DEFAULT_FORMAT = __available_formats__[2]
 
 __selected_format__ = DEFAULT_FORMAT
 
+
 class InvalidFormatError(Exception):
     def __init__(self, msg):
         super(InvalidFormatError, self).__init__(msg)
         self.msg = msg
+
 
 def select(format):
     global __selected_format__
@@ -46,22 +48,27 @@ def select(format):
 
     return format in __available_formats__
 
+
 def get_selected():
     return __selected_format__
 
+
 def is_interactive_format():
     return __selected_format__ == "text"
+
 
 def __output_html_template__(name):
     template_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), name)
     file_r = open(template_path, "rb")
     return file_r.read().decode("utf-8", "replace")
 
+
 def __get_zip_file_content__(name, file_name="/html/flot.zip"):
     zip_file = zipfile.ZipFile(basedir.get_basedir() + file_name, "r")
     content = zip_file.read(name)
     zip_file.close()
     return content.decode("utf-8", "replace")
+
 
 def output_header():
     if __selected_format__ == "html" or __selected_format__ == "htmlembedded":
@@ -109,6 +116,7 @@ def output_header():
     else:
         print(textwrap.fill(_("Statistical information for the repository '{0}' was gathered on {1}.").format(
               os.path.basename(basedir.get_basedir_git()), localization.get_date()), width=terminal.get_size()[0]))
+
 
 def output_footer():
     if __selected_format__ == "html" or __selected_format__ == "htmlembedded":
