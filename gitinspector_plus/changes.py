@@ -108,13 +108,20 @@ class AuthorInfo:
     commits = 0
 
 
-def read_commits(hard, changes, revision_start, revision_end='HEAD'):
+REVISION_END_DEFAULT = 'HEAD'
+
+
+def read_commits(hard, changes, revision_start=None, revision_end=REVISION_END_DEFAULT):
+    if revision_start:
+        revision_range = revision_start + '..' +revision_end
+    else:
+        revision_range = revision_end
+
     lines = run_git_log_command(
         filter(None, (('--reverse', '--pretty=%cd|%H|%aN|%aE',
                       '--stat=100000,8192', '--no-merges', '-w', interval.get_since(),
                       interval.get_until(), '--date=short') +
-                      (('-C', '-C', '-M') if hard else ()) +
-                      (revision_start + '..' + revision_end,))))
+                      (('-C', '-C', '-M') if hard else ()) + (revision_range,))))
 
     commit = None
     found_valid_extension = False
@@ -166,14 +173,6 @@ class Changes(object):
     emails_by_author = {}
 
     def __init__(self, hard, revision_start=None, revision_end='HEAD'):
-        if not revision_start:
-            # TODO(dmu) LOW: Is this peace of code really needed?
-            commit_hashes = run_git_rev_list_command(
-                filter(None, ('--reverse', '--no-merges',
-                              interval.get_since(),
-                              interval.get_until(),
-                              'HEAD')))
-            revision_start = commit_hashes[0]
 
         self.commits = read_commits(hard, self, revision_start=revision_start,
                                     revision_end=revision_end)

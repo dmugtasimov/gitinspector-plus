@@ -89,14 +89,15 @@ class Runner(object):
         if self.format != 'text':
             outputable_result = changes.ChangesOutput(self.hard)
             outputable.output(outputable_result)
+            all_changes = changes.get(self.hard)
         else:
             changes_local = Changes(hard=self.hard,
                                     revision_start=self.revision_start,
                                     revision_end=self.revision_end)
+            all_changes = changes_local
             text_renderer = ChangesTextRenderer(changes_local)
             text_renderer.render()
 
-        all_changes = changes.get(self.hard)
         if all_changes.get_commits():
             outputable_result = blame.BlameOutput(all_changes, self.hard, self.use_weeks)
             outputable.output(outputable_result)
