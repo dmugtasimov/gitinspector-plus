@@ -32,6 +32,8 @@ import os
 import sys
 
 from collections import namedtuple
+from gitinspector_plus.renderers.text import ChangesTextRenderer
+from gitinspector_plus.changes import Changes
 from gitinspector_plus.config import GitConfigArg
 from gitinspector_plus import (basedir, blame, changes, clone, config, extensions, filtering,
                                format, interval, metrics, outputable, responsibilities, terminal,
@@ -46,7 +48,7 @@ class Runner(object):
 
     def __init__(self, repo='.', hard=False, include_metrics=False, list_file_types=False,
                  localize_output=False, responsibilities=False, grading=False, timeline=timeline,
-                 use_weeks=False, format='text'):
+                 use_weeks=False, format='text', revision_start=None, revision_end='HEAD'):
         self.repo = repo
 
         self.grading = grading
@@ -67,14 +69,10 @@ class Runner(object):
 
         self.localize_output = localize_output
         self.format = format
-
-    def output_new(self):
-        pass
+        self.revision_start = revision_start
+        self.revision_end = revision_end
 
     def output(self):
-        #if self.format == 'text':
-        #    self.output_new()
-        #    return
 
         if not self.localize_output:
             localization.disable()
@@ -87,26 +85,41 @@ class Runner(object):
         absolute_path = basedir.get_basedir_git()
         os.chdir(absolute_path)
         format.output_header()
-        outputable.output(changes.ChangesOutput(self.hard))
+
+        if self.format != 'text':
+            outputable_result = changes.ChangesOutput(self.hard)
+            outputable.output(outputable_result)
+        else:
+            changes_local = Changes(hard=self.hard,
+                                    revision_start=self.revision_start,
+                                    revision_end=self.revision_end)
+            text_renderer = ChangesTextRenderer(changes_local)
+            text_renderer.render()
 
         all_changes = changes.get(self.hard)
         if all_changes.get_commits():
-            outputable.output(blame.BlameOutput(all_changes, self.hard, self.use_weeks))
+            outputable_result = blame.BlameOutput(all_changes, self.hard, self.use_weeks)
+            outputable.output(outputable_result)
 
             if self.timeline:
-                outputable.output(timeline.Timeline(all_changes, self.use_weeks))
+                outputable_result = timeline.Timeline(all_changes, self.use_weeks)
+                outputable.output(outputable_result)
 
             if self.include_metrics:
-                outputable.output(metrics.Metrics())
+                outputable_result = metrics.Metrics()
+                outputable.output(outputable_result)
 
             if self.responsibilities:
-                outputable.output(responsibilities.ResponsibilitiesOutput(self.hard,
-                                                                          self.use_weeks))
+                outputable_result = responsibilities.ResponsibilitiesOutput(self.hard,
+                                                                            self.use_weeks)
+                outputable.output(outputable_result)
 
-            outputable.output(filtering.Filtering())
+            outputable_result = filtering.Filtering()
+            outputable.output(outputable_result)
 
             if self.list_file_types:
-                outputable.output(extensions.Extensions())
+                outputable_result = extensions.Extensions()
+                outputable.output(outputable_result)
 
         format.output_footer()
         os.chdir(previous_directory)
@@ -184,13 +197,23 @@ def main():
                      kwargs=dict(metavar='DATE', default=None,
                                  help='only show statistics for commits more recent than '
                                       'a specific date')),
-            Argument(args=('-T', '--timeline'),
-                     kwargs=dict(action='store_true', dest='timeline',
-                                 help='show commit timeline, including author names')),
             Argument(args=('--until',),
                      kwargs=dict(metavar='DATE', default=None,
                                  help='only show statistics for commits older than a specific '
                                       'date')),
+            Argument(args=('--revision-start',),
+                     kwargs=dict(default=None, dest='revision_start',
+                                 help='only show statistics for commits starting from this '
+                                      'revision (inclusive), any proper git revision is '
+                                      'applicable')),
+            Argument(args=('--revision-end',),
+                     kwargs=dict(default='HEAD', dest='revision_end',
+                                 help='only show statistics for commits starting from this '
+                                      'revision (exclusive), any proper git revision is '
+                                      'applicable')),
+            Argument(args=('-T', '--timeline'),
+                     kwargs=dict(action='store_true', dest='timeline',
+                                 help='show commit timeline, including author names')),
             Argument(args=('-w', '--weeks'),
                      kwargs=dict(action='store_true', dest='weeks',
                                  help='show all statistical information in weeks instead of in '
@@ -238,7 +261,8 @@ def main():
                         list_file_types=args.list_file_types, include_metrics=args.metrics,
                         responsibilities=args.responsibilities, use_weeks=args.weeks,
                         timeline=args.timeline, localize_output=args.localize_output,
-                        format=args.format)
+                        format=args.format, revision_start=args.revision_start,
+                        revision_end=args.revision_end)
 
         extensions.define(args.file_types)
         if not format.select(args.format):

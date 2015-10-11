@@ -24,11 +24,8 @@ from gitinspector_plus.localization import N_
 from gitinspector_plus.outputable import Outputable
 import datetime
 import json
-import multiprocessing
 import os
-import subprocess
 import textwrap
-import threading
 
 
 from gitinspector_plus import extensions
@@ -41,12 +38,6 @@ from gitinspector_plus import terminal
 
 from gitinspector_plus.utils import run_git_rev_list_command, run_git_log_command
 
-
-CHANGES_PER_THREAD = 200
-NUM_THREADS = multiprocessing.cpu_count()
-
-__thread_lock__ = threading.BoundedSemaphore(NUM_THREADS)
-__changes_lock__ = threading.Lock()
 
 class FileDiff:
     def __init__(self, string):
@@ -79,6 +70,7 @@ class FileDiff:
             if (extension == "" and i == "*") or extension == i or i == '**':
                 return True
         return False
+
 
 class Commit:
     def __init__(self, string):
@@ -116,12 +108,13 @@ class AuthorInfo:
     commits = 0
 
 
-def read_commits(hard, changes, commit_hash):
+def read_commits(hard, changes, revision_start, revision_end='HEAD'):
     lines = run_git_log_command(
         filter(None, (('--reverse', '--pretty=%cd|%H|%aN|%aE',
                       '--stat=100000,8192', '--no-merges', '-w', interval.get_since(),
                       interval.get_until(), '--date=short') +
-                      (('-C', '-C', '-M') if hard else ()) + (commit_hash + '..HEAD',))))
+                      (('-C', '-C', '-M') if hard else ()) +
+                      (revision_start + '..' + revision_end,))))
 
     commit = None
     found_valid_extension = False
@@ -172,14 +165,18 @@ class Changes(object):
     authors_by_email = {}
     emails_by_author = {}
 
-    def __init__(self, hard):
-        self.commits = []
-        commit_hashes = run_git_rev_list_command(
-            filter(None, ('--reverse', '--no-merges', interval.get_since(), interval.get_until(),
-                          'HEAD')))
+    def __init__(self, hard, revision_start=None, revision_end='HEAD'):
+        if not revision_start:
+            # TODO(dmu) LOW: Is this peace of code really needed?
+            commit_hashes = run_git_rev_list_command(
+                filter(None, ('--reverse', '--no-merges',
+                              interval.get_since(),
+                              interval.get_until(),
+                              'HEAD')))
+            revision_start = commit_hashes[0]
 
-        if commit_hashes:
-            self.commits = read_commits(hard, self, commit_hashes[0])
+        self.commits = read_commits(hard, self, revision_start=revision_start,
+                                    revision_end=revision_end)
 
         if self.commits:
             if interval.has_interval():
@@ -192,6 +189,7 @@ class Changes(object):
 
     def get_commits(self):
         return self.commits
+
 
     @staticmethod
     def modify_authorinfo(authors, key, commit):
@@ -245,6 +243,7 @@ NO_COMMITED_FILES_TEXT = N_("No commited files with the specified extensions wer
 
 
 class ChangesOutput(Outputable):
+
     def __init__(self, hard):
         self.changes = get(hard)
         Outputable.__init__(self)
@@ -310,32 +309,6 @@ class ChangesOutput(Outputable):
 
         changes_xml += "</div></div>"
         print(changes_xml)
-
-    def output_text(self):
-        authorinfo_list = self.changes.get_authorinfo_list()
-        total_changes = 0.0
-
-        for i in authorinfo_list:
-            total_changes += authorinfo_list.get(i).insertions
-            total_changes += authorinfo_list.get(i).deletions
-
-        if authorinfo_list:
-            print(textwrap.fill(_(HISTORICAL_INFO_TEXT) + ":", width=terminal.get_size()[0]) + "\n")
-            terminal.printb(terminal.ljust(_("Author"), 21) + terminal.rjust(_("Commits"), 13) +
-                            terminal.rjust(_("Insertions"), 14) + terminal.rjust(_("Deletions"), 15) +
-                    terminal.rjust(_("% of changes"), 16))
-
-            for i in sorted(authorinfo_list):
-                authorinfo = authorinfo_list.get(i)
-                percentage = 0 if total_changes == 0 else (authorinfo.insertions + authorinfo.deletions) / total_changes * 100
-
-                print(terminal.ljust(i, 20)[0:20 - terminal.get_excess_column_count(i)], end=" ")
-                print(str(authorinfo.commits).rjust(13), end=" ")
-                print(str(authorinfo.insertions).rjust(13), end=" ")
-                print(str(authorinfo.deletions).rjust(14), end=" ")
-                print("{0:.2f}".format(percentage).rjust(15))
-        else:
-            print(_(NO_COMMITED_FILES_TEXT) + ".")
 
     def output_xml(self):
         authorinfo_list = self.changes.get_authorinfo_list()
