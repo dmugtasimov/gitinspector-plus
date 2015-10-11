@@ -29,6 +29,7 @@ __normal__ =  "\033[0;0m"
 
 DEFAULT_TERMINAL_SIZE = (80, 25)
 
+
 def __get_size_windows__():
     res = None
     try:
@@ -48,6 +49,7 @@ def __get_size_windows__():
         return sizex, sizey
     else:
         return DEFAULT_TERMINAL_SIZE
+
 
 def __get_size_linux__():
     def ioctl_get_window_size(file_descriptor):
@@ -76,8 +78,10 @@ def __get_size_linux__():
 
     return int(size[1]), int(size[0])
 
+
 def clear_row():
     print("\b" * 200, end="")
+
 
 def skip_escapes(skip):
     if skip:
@@ -86,8 +90,10 @@ def skip_escapes(skip):
         __bold__ = ""
         __normal__ = ""
 
-def printb(string):
+
+def print_bold(string):
     print(__bold__ + string + __normal__)
+
 
 def get_size():
     width = 0
@@ -106,13 +112,16 @@ def get_size():
 
     return DEFAULT_TERMINAL_SIZE
 
+
 def set_stdout_encoding():
     if not sys.stdout.isatty() and sys.version_info < (3,):
         sys.stdout = codecs.getwriter("utf-8")(sys.stdout)
 
+
 def set_stdin_encoding():
     if not sys.stdin.isatty() and sys.version_info < (3,):
         sys.stdin = codecs.getreader("utf-8")(sys.stdin)
+
 
 def convert_command_line_to_utf8():
     try:
@@ -125,10 +134,12 @@ def convert_command_line_to_utf8():
     except AttributeError:
         return sys.argv
 
+
 def check_terminal_encoding():
     if sys.stdout.isatty() and (sys.stdout.encoding == None or sys.stdin.encoding == None):
         print(_("WARNING: The terminal encoding is not correctly configured. gitinspector might malfunction. "
                 "The encoding can be configured with the environment variable 'PYTHONIOENCODING'."), file=sys.stderr)
+
 
 def get_excess_column_count(string):
     width_mapping = {'F': 2, 'H': 1, 'W': 2, 'Na': 1, 'N': 1, 'A': 1}
@@ -140,8 +151,10 @@ def get_excess_column_count(string):
 
     return result - len(string)
 
+
 def ljust(string, pad):
     return string.ljust(pad - get_excess_column_count(string))
+
 
 def rjust(string, pad):
     return string.rjust(pad - get_excess_column_count(string))

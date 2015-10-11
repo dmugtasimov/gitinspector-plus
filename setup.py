@@ -46,9 +46,10 @@ setup(
         'Topic :: Software Development :: Version Control',
         'Topic :: Utilities'
     ],
+    install_requires=['cachetools==1.1.3'],
     packages=find_packages(exclude=['tests']),
     package_data={'': ['html/*', 'translations/*']},
     data_files=[('share/doc/gitinspector_plus', glob('*.txt'))],
-    entry_points={'console_scripts': ['gitinspector_plus = gitinspector_plus.gitinspector_plus:main']},
+    entry_points={'console_scripts': ['gitinspector_plus = gitinspector_plus.main:main']},
     zip_safe=False
 )

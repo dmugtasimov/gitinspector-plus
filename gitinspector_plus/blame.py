@@ -19,47 +19,47 @@
 
 from __future__ import print_function
 from __future__ import unicode_literals
-from localization import N_
-from outputable import Outputable
-from changes import FileDiff
-import comment
-import datetime
-import filtering
-import format
-import gravatar
-import interval
-import json
-import multiprocessing
-import re
-import subprocess
-import sys
-import terminal
-import textwrap
-import threading
 
-NUM_THREADS = multiprocessing.cpu_count()
+import datetime
+import json
+import re
+import sys
+
+from gitinspector_plus.localization import N_
+from gitinspector_plus.outputable import Outputable
+from gitinspector_plus.changes import FileDiff
+from gitinspector_plus import comment
+from gitinspector_plus import filtering
+from gitinspector_plus import format
+from gitinspector_plus import gravatar
+from gitinspector_plus import interval
+from gitinspector_plus import terminal
+
+from gitinspector_plus.utils import (run_git_ls_tree_command, run_git_blame_command,
+                                     get_revision_range, run_git_rev_list_command)
+
 
 class BlameEntry:
     rows = 0
     skew = 0 # Used when calculating average code age.
     comments = 0
 
-__thread_lock__ = threading.BoundedSemaphore(NUM_THREADS)
-__blame_lock__ = threading.Lock()
 
 AVG_DAYS_PER_MONTH = 30.4167
 
-class BlameThread(threading.Thread):
-    def __init__(self, useweeks, changes, blame_command, extension, blames, filename):
-        __thread_lock__.acquire() # Lock controlling the number of threads running
-        threading.Thread.__init__(self)
 
-        self.useweeks = useweeks
+class BlameWorker(object):
+
+    def __init__(self, use_weeks, changes, blame_arguments, extension, blames, filename,
+                 included_commit_hashes):
+
+        self.use_weeks = use_weeks
         self.changes = changes
-        self.blame_command = blame_command
+        self.blame_arguments = blame_arguments
         self.extension = extension
         self.blames = blames
         self.filename = filename
+        self.included_commit_hashes = included_commit_hashes
 
         self.is_inside_comment = False
 
@@ -71,6 +71,9 @@ class BlameThread(threading.Thread):
         self.blamechunk_time = None
 
     def __handle_blamechunk_content__(self, content):
+        if self.blamechunk_revision not in self.included_commit_hashes:
+            return
+
         author = None
         (comments, self.is_inside_comment) = comment.handle_comment_block(self.is_inside_comment, self.extension, content)
 
@@ -85,8 +88,6 @@ class BlameThread(threading.Thread):
                filtering.set_filtered(self.blamechunk_email, "email") and not \
                filtering.set_filtered(self.blamechunk_revision, "revision"):
 
-            __blame_lock__.acquire() # Global lock used to protect calls from here...
-
             if self.blames.get((author, self.filename), None) == None:
                 self.blames[(author, self.filename)] = BlameEntry()
 
@@ -95,67 +96,68 @@ class BlameThread(threading.Thread):
 
             if (self.blamechunk_time - self.changes.first_commit_date).days > 0:
                 self.blames[(author, self.filename)].skew += ((self.changes.last_commit_date - self.blamechunk_time).days /
-                                                             (7.0 if self.useweeks else AVG_DAYS_PER_MONTH))
-
-            __blame_lock__.release() # ...to here.
+                                                             (7.0 if self.use_weeks else AVG_DAYS_PER_MONTH))
 
     def run(self):
-        git_blame_r = subprocess.Popen(self.blame_command, bufsize=1, stdout=subprocess.PIPE).stdout
-        rows = git_blame_r.readlines()
-        git_blame_r.close()
+
+        rows = run_git_blame_command(self.blame_arguments)
 
         self.__clear_blamechunk_info__()
 
         #pylint: disable=W0201
         for j in range(0, len(rows)):
             row = rows[j].decode("utf-8", "replace").strip()
-            keyval = row.split(" ", 2)
+            keyval = row.split(' ', 2)
 
             if self.blamechunk_is_last:
                 self.__handle_blamechunk_content__(row)
                 self.__clear_blamechunk_info__()
-            elif keyval[0] == "boundary":
+            elif keyval[0] == 'boundary':
                 self.blamechunk_is_prior = True
-            elif keyval[0] == "author-mail":
-                self.blamechunk_email = keyval[1].lstrip("<").rstrip(">")
-            elif keyval[0] == "author-time":
+            elif keyval[0] == 'author-mail':
+                self.blamechunk_email = keyval[1].lstrip('<').rstrip('>')
+            elif keyval[0] == 'author-time':
                 self.blamechunk_time = datetime.date.fromtimestamp(int(keyval[1]))
-            elif keyval[0] == "filename":
+            elif keyval[0] == 'filename':
                 self.blamechunk_is_last = True
             elif Blame.is_revision(keyval[0]):
                 self.blamechunk_revision = keyval[0]
 
-        __thread_lock__.release() # Lock controlling the number of threads running
 
 PROGRESS_TEXT = N_("Checking how many rows belong to each author (Progress): {0:.0f}%")
 
-class Blame:
-    def __init__(self, hard, useweeks, changes):
+
+class Blame(object):
+
+    def __init__(self, hard, use_weeks, changes, revision_start=None, revision_end='HEAD'):
+
+        self.revision_start = revision_start
+        self.revision_end = revision_end
+        revision_range = get_revision_range(self.revision_start, self.revision_end)
+
         self.blames = {}
-        ls_tree_r = subprocess.Popen(["git", "ls-tree", "--name-only", "-r", interval.get_ref()], bufsize=1,
-                                     stdout=subprocess.PIPE).stdout
-        lines = ls_tree_r.readlines()
-        ls_tree_r.close()
+        lines = run_git_ls_tree_command(('--name-only', '-r', self.revision_end))
+        commit_hashes = frozenset(
+            run_git_rev_list_command(
+                filter(None, ('--reverse', '--no-merges',
+                              interval.get_since(),
+                              interval.get_until(), revision_range))))
 
-        for i, row in enumerate(lines):
-            row = row.strip().decode("unicode_escape", "ignore")
-            row = row.encode("latin-1", "replace")
-            row = row.decode("utf-8", "replace").strip("\"").strip("'").strip()
+        for line_no, line in enumerate(lines):
+            line = line.strip().decode('unicode_escape', 'ignore')
+            line = line.encode('latin-1', 'replace')
+            line = line.decode('utf-8', 'replace').strip('"').strip("'").strip()
 
-            if FileDiff.is_valid_extension(row) and not filtering.set_filtered(FileDiff.get_filename(row)):
-                blame_command = filter(None, ["git", "blame", "--line-porcelain", "-w"] + \
-                        (["-C", "-C", "-M"] if hard else []) +
-                                [interval.get_since(), interval.get_ref(), "--", row])
-                thread = BlameThread(useweeks, changes, blame_command, FileDiff.get_extension(row), self.blames, row.strip())
-                thread.daemon = True
-                thread.start()
+            if FileDiff.is_valid_extension(line) and not filtering.set_filtered(FileDiff.get_filename(line)):
+                blame_arguments = filter(None, ('--line-porcelain', '-w') +
+                                               (('-C', '-C', '-M') if hard else ()) +
+                                               (interval.get_since(), revision_range, "--",
+                                               line))
 
-                if hard:
-                    Blame.output_progress(i, len(lines))
-
-        # Make sure all threads have completed.
-        for i in range(0, NUM_THREADS):
-            __thread_lock__.acquire()
+                worker = BlameWorker(use_weeks, changes, blame_arguments,
+                                     FileDiff.get_extension(line), self.blames, line.strip(),
+                                     included_commit_hashes=commit_hashes)
+                worker.run()
 
     @staticmethod
     def output_progress(pos, length):
@@ -209,16 +211,15 @@ def get(hard, useweeks, changes):
 BLAME_INFO_TEXT = N_("Below are the number of rows from each author that have survived and are still "
                      "intact in the current revision")
 
+
 class BlameOutput(Outputable):
-    def __init__(self, changes, hard, useweeks):
+
+    def __init__(self, changes):
         if format.is_interactive_format():
-            print("")
+            print('')
 
         self.changes = changes
-        self.hard = hard
-        self.useweeks = useweeks
-        get(self.hard, self.useweeks, self.changes)
-        Outputable.__init__(self)
+        super(Outputable, self).__init__()
 
     def output_html(self):
         blame_xml = "<div><div class=\"box\">"
@@ -274,21 +275,6 @@ class BlameOutput(Outputable):
         blame_xml += "</script></div></div>"
 
         print(blame_xml)
-
-    def output_text(self):
-        if sys.stdout.isatty() and format.is_interactive_format():
-            terminal.clear_row()
-
-        print(textwrap.fill(_(BLAME_INFO_TEXT) + ":", width=terminal.get_size()[0]) + "\n")
-        terminal.printb(terminal.ljust(_("Author"), 21) + terminal.rjust(_("Rows"), 10) + terminal.rjust(_("Stability"), 15) +
-                        terminal.rjust(_("Age"), 13) + terminal.rjust(_("% in comments"), 20))
-
-        for i in sorted(__blame__.get_summed_blames().items()):
-            print(terminal.ljust(i[0], 20)[0:20 - terminal.get_excess_column_count(i[0])], end=" ")
-            print(str(i[1].rows).rjust(10), end=" ")
-            print("{0:.1f}".format(Blame.get_stability(i[0], i[1].rows, self.changes)).rjust(14), end=" ")
-            print("{0:.1f}".format(float(i[1].skew) / i[1].rows).rjust(12), end=" ")
-            print("{0:.2f}".format(100.0 * i[1].comments / i[1].rows).rjust(19))
 
     def output_xml(self):
         message_xml = "\t\t<message>" + _(BLAME_INFO_TEXT) + "</message>\n"

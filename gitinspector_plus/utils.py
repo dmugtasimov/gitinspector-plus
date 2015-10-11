@@ -42,3 +42,18 @@ def run_git_rev_list_command(arguments):
 
 def run_git_log_command(arguments):
     return run_git_command(tuple(chain(('log',), arguments)))
+
+
+def run_git_ls_tree_command(arguments):
+    return run_git_command(tuple(chain(('ls-tree',), arguments)))
+
+
+def run_git_blame_command(arguments):
+    return run_git_command(tuple(chain(('blame',), arguments)))
+
+
+def get_revision_range(revision_start=None, revision_end='HEAD'):
+    if revision_start:
+        return revision_start + '..' + revision_end
+    else:
+        return revision_end

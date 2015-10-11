@@ -19,12 +19,14 @@
 
 from __future__ import print_function
 from __future__ import unicode_literals
-from localization import N_
-from outputable import Outputable
+
 import re
 import subprocess
-import terminal
 import textwrap
+
+from gitinspector_plus.localization import N_
+from gitinspector_plus.outputable import Outputable
+from gitinspector_plus import terminal
 
 __filters__ = {"file": [set(), set()], "author": [set(), set()], "email": [set(), set()], "revision": [set(), set()],
                "message" : [set(), None]}

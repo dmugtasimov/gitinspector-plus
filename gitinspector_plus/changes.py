@@ -20,23 +20,22 @@
 from __future__ import print_function
 from __future__ import unicode_literals
 from __future__ import absolute_import
-from gitinspector_plus.localization import N_
-from gitinspector_plus.outputable import Outputable
+
 import datetime
 import json
 import os
-import textwrap
+import operator
 
+from cachetools import cachedmethod
 
+from gitinspector_plus.localization import N_
+from gitinspector_plus.outputable import Outputable
 from gitinspector_plus import extensions
 from gitinspector_plus import filtering
 from gitinspector_plus import format
 from gitinspector_plus import gravatar
 from gitinspector_plus import interval
-from gitinspector_plus import terminal
-
-
-from gitinspector_plus.utils import run_git_rev_list_command, run_git_log_command
+from gitinspector_plus.utils import run_git_log_command, get_revision_range
 
 
 class FileDiff:
@@ -112,11 +111,8 @@ REVISION_END_DEFAULT = 'HEAD'
 
 
 def read_commits(hard, changes, revision_start=None, revision_end=REVISION_END_DEFAULT):
-    if revision_start:
-        revision_range = revision_start + '..' +revision_end
-    else:
-        revision_range = revision_end
 
+    revision_range = get_revision_range(revision_start, revision_end)
     lines = run_git_log_command(
         filter(None, (('--reverse', '--pretty=%cd|%H|%aN|%aE',
                       '--stat=100000,8192', '--no-merges', '-w', interval.get_since(),
@@ -174,21 +170,30 @@ class Changes(object):
 
     def __init__(self, hard, revision_start=None, revision_end='HEAD'):
 
-        self.commits = read_commits(hard, self, revision_start=revision_start,
-                                    revision_end=revision_end)
+        self.cache = {}
 
-        if self.commits:
+        self.hard = hard
+        self.revision_start = revision_start
+        self.revision_end = revision_end
+
+    @property
+    @cachedmethod(operator.attrgetter('cache'))
+    def commits(self):
+        commits = read_commits(self.hard, self, revision_start=self.revision_start,
+                               revision_end=self.revision_end)
+
+        if commits:
             if interval.has_interval():
-                interval.set_ref(self.commits[-1].sha)
+                interval.set_ref(commits[-1].sha)
 
-            self.first_commit_date = datetime.date(int(self.commits[0].date[0:4]), int(self.commits[0].date[5:7]),
-                                                   int(self.commits[0].date[8:10]))
-            self.last_commit_date = datetime.date(int(self.commits[-1].date[0:4]), int(self.commits[-1].date[5:7]),
-                                                  int(self.commits[-1].date[8:10]))
+            self.first_commit_date = datetime.date(int(commits[0].date[0:4]),
+                                                   int(commits[0].date[5:7]),
+                                                   int(commits[0].date[8:10]))
+            self.last_commit_date = datetime.date(int(commits[-1].date[0:4]),
+                                                  int(commits[-1].date[5:7]),
+                                                  int(commits[-1].date[8:10]))
 
-    def get_commits(self):
-        return self.commits
-
+        return commits
 
     @staticmethod
     def modify_authorinfo(authors, key, commit):

@@ -20,10 +20,7 @@
 from __future__ import print_function
 from __future__ import unicode_literals
 
-try:
-    import basedir
-except:
-    import gitinspector.basedir as basedir
+import gitinspector_plus.basedir as basedir
 
 import gettext
 import locale
@@ -35,9 +32,11 @@ __enabled__ = False
 __installed__ = False
 __translation__ = None
 
+
 #Dummy function used to handle string constants
 def N_(message):
     return message
+
 
 def init():
     global __enabled__
@@ -74,6 +73,7 @@ def init():
         __installed__ = True
         __translation__.install(True)
 
+
 def get_date():
     if __enabled__ and isinstance(__translation__, gettext.GNUTranslations):
         date = time.strftime("%x")
@@ -85,12 +85,14 @@ def get_date():
     else:
         return time.strftime("%Y/%m/%d")
 
+
 def enable():
     if isinstance(__translation__, gettext.GNUTranslations):
         __translation__.install(True)
 
         global __enabled__
         __enabled__ = True
+
 
 def disable():
     global __enabled__

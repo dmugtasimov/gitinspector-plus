@@ -30,9 +30,9 @@ import argparse
 import atexit
 import os
 import sys
-
 from collections import namedtuple
-from gitinspector_plus.renderers.text import ChangesTextRenderer
+
+from gitinspector_plus.renderers.text import ChangesTextRenderer, BlameTextRenderer
 from gitinspector_plus.changes import Changes
 from gitinspector_plus.config import GitConfigArg
 from gitinspector_plus import (basedir, blame, changes, clone, config, extensions, filtering,
@@ -40,14 +40,13 @@ from gitinspector_plus import (basedir, blame, changes, clone, config, extension
                                timeline)
 from gitinspector_plus.version import __version__
 
-
 Argument = namedtuple('Argument', ('args', 'kwargs'))
 
 
 class Runner(object):
 
     def __init__(self, repo='.', hard=False, include_metrics=False, list_file_types=False,
-                 localize_output=False, responsibilities=False, grading=False, timeline=timeline,
+                 localize_output=False, responsibilities=False, grading=False, timeline=False,
                  use_weeks=False, format='text', revision_start=None, revision_end='HEAD'):
         self.repo = repo
 
@@ -98,9 +97,19 @@ class Runner(object):
             text_renderer = ChangesTextRenderer(changes_local)
             text_renderer.render()
 
-        if all_changes.get_commits():
-            outputable_result = blame.BlameOutput(all_changes, self.hard, self.use_weeks)
-            outputable.output(outputable_result)
+        if all_changes.commits:
+            blame_local = blame.Blame(self.hard, self.use_weeks, all_changes,
+                                      revision_start=self.revision_start,
+                                      revision_end=self.revision_end)
+
+            if self.format != 'text':
+                # TODO(dmu) HIGH: Refactor blame.__blame__ = ...
+                blame.__blame__ = blame_local
+                outputable_result = blame.BlameOutput(all_changes)
+                outputable.output(outputable_result)
+            else:
+                blame_text_renderer = BlameTextRenderer(all_changes, blame_local)
+                blame_text_renderer.render()
 
             if self.timeline:
                 outputable_result = timeline.Timeline(all_changes, self.use_weeks)

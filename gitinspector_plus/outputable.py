@@ -23,6 +23,7 @@ import format
 
 
 class Outputable(object):
+
     def output_html(self):
         print(_("HTML output not yet supported in") + " \"" + self.__class__.__name__ + "\".")
 

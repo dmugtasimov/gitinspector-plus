@@ -186,7 +186,7 @@ class Timeline(Outputable):
         Outputable.__init__(self)
 
     def output_text(self):
-        if self.changes.get_commits():
+        if self.changes.commits:
             print("\n" + textwrap.fill(_(TIMELINE_INFO_TEXT) + ":", width=terminal.get_size()[0]))
 
             timeline_data = TimelineData(self.changes, self.useweeks)
@@ -199,7 +199,7 @@ class Timeline(Outputable):
                 __output_row__text__(timeline_data, periods[i:i+max_periods_per_row], names)
 
     def output_html(self):
-        if self.changes.get_commits():
+        if self.changes.commits:
             timeline_data = TimelineData(self.changes, self.useweeks)
             periods = timeline_data.get_periods()
             names = timeline_data.get_authors()
@@ -216,7 +216,7 @@ class Timeline(Outputable):
             print(timeline_xml)
 
     def output_xml(self):
-        if self.changes.get_commits():
+        if self.changes.commits:
             message_xml = "\t\t<message>" + _(TIMELINE_INFO_TEXT) + "</message>\n"
             timeline_xml = ""
             periods_xml = "\t\t<periods length=\"{0}\">\n".format("week" if self.useweeks else "month")

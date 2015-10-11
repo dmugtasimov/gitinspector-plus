@@ -20,12 +20,8 @@
 from __future__ import print_function
 from __future__ import unicode_literals
 
-try:
-    import localization
-    localization.init()
-except:
-    import gitinspector_plus.localization
-    gitinspector_plus.localization.init()
+from gitinspector_plus import localization
+localization.init()
 
 __version__ = "0.5.0dev"
 
