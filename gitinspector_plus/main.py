@@ -32,7 +32,8 @@ import os
 import sys
 from collections import namedtuple
 
-from gitinspector_plus.renderers.text import ChangesTextRenderer, BlameTextRenderer
+from gitinspector_plus.renderers.text import ChangesTextRenderer, render_blame_text
+from gitinspector_plus.extractors.blame import calculate_blame_stats
 from gitinspector_plus.changes import Changes
 from gitinspector_plus.config import GitConfigArg
 from gitinspector_plus import (basedir, blame, changes, clone, config, extensions, filtering,
@@ -98,18 +99,16 @@ class Runner(object):
             text_renderer.render()
 
         if all_changes.commits:
-            blame_local = blame.Blame(self.hard, self.use_weeks, all_changes,
-                                      revision_start=self.revision_start,
-                                      revision_end=self.revision_end)
+            blame_stats = calculate_blame_stats(hard=self.hard,
+                                                revision_start=self.revision_start,
+                                                revision_end=self.revision_end)
 
             if self.format != 'text':
                 # TODO(dmu) HIGH: Refactor blame.__blame__ = ...
-                blame.__blame__ = blame_local
                 outputable_result = blame.BlameOutput(all_changes)
                 outputable.output(outputable_result)
             else:
-                blame_text_renderer = BlameTextRenderer(all_changes, blame_local)
-                blame_text_renderer.render()
+                render_blame_text(blame_stats)
 
             if self.timeline:
                 outputable_result = timeline.Timeline(all_changes, self.use_weeks)
@@ -137,7 +136,7 @@ class Runner(object):
 
 def check_python_version():
     if sys.version_info < (2, 7):
-        sys.exit(_('gitinspector requires at least Python 2.7.x to run '
+        sys.exit(_('gitinspector_plus requires at least Python 2.7.x to run '
                    '(version {0} was found).').format(sys.version))
 
 

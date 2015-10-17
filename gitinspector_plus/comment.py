@@ -50,6 +50,7 @@ def __has_comment_end__(extension, string):
 
     return False
 
+
 def is_comment(extension, string):
     if __comment_begining__.get(extension, None) != None and string.strip().startswith(__comment_begining__[extension]):
         return True
@@ -59,6 +60,7 @@ def is_comment(extension, string):
         return True
 
     return False
+
 
 def handle_comment_block(is_inside_comment, extension, content):
     comments = 0

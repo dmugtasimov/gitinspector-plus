@@ -39,15 +39,12 @@ from gitinspector_plus.utils import (run_git_ls_tree_command, run_git_blame_comm
                                      get_revision_range, run_git_rev_list_command)
 
 
-class BlameEntry:
-    rows = 0
-    skew = 0 # Used when calculating average code age.
-    comments = 0
-
 
 AVG_DAYS_PER_MONTH = 30.4167
 
 
+# TODO(dmu) HIGH: Restore support for comments counting
+# TODO(dmu) HIGH: Restore support for code age counting
 class BlameWorker(object):
 
     def __init__(self, use_weeks, changes, blame_arguments, extension, blames, filename,
@@ -58,72 +55,28 @@ class BlameWorker(object):
         self.blame_arguments = blame_arguments
         self.extension = extension
         self.blames = blames
-        self.filename = filename
         self.included_commit_hashes = included_commit_hashes
 
         self.is_inside_comment = False
 
-    def __clear_blamechunk_info__(self):
-        self.blamechunk_email = None
-        self.blamechunk_is_last = False
-        self.blamechunk_is_prior = False
-        self.blamechunk_revision = None
-        self.blamechunk_time = None
-
-    def __handle_blamechunk_content__(self, content):
-        if self.blamechunk_revision not in self.included_commit_hashes:
+    def handle_blame_line(self, blame_line):
+        if blame_line.revision not in self.included_commit_hashes:
             return
 
-        author = None
-        (comments, self.is_inside_comment) = comment.handle_comment_block(self.is_inside_comment, self.extension, content)
-
-        if self.blamechunk_is_prior and interval.get_since():
-            return
         try:
-            author = self.changes.get_latest_author_by_email(self.blamechunk_email)
+            author = self.changes.get_latest_author_by_email(blame_line.email)
         except KeyError:
             return
 
-        if not filtering.set_filtered(author, "author") and not \
-               filtering.set_filtered(self.blamechunk_email, "email") and not \
-               filtering.set_filtered(self.blamechunk_revision, "revision"):
+        if (filtering.set_filtered(author, 'author') or
+                filtering.set_filtered(blame_line.email, 'email') or
+                filtering.set_filtered(blame_line.revision, 'revision')):
+            return
 
-            if self.blames.get((author, self.filename), None) == None:
-                self.blames[(author, self.filename)] = BlameEntry()
-
-            self.blames[(author, self.filename)].comments += comments
-            self.blames[(author, self.filename)].rows += 1
-
-            if (self.blamechunk_time - self.changes.first_commit_date).days > 0:
-                self.blames[(author, self.filename)].skew += ((self.changes.last_commit_date - self.blamechunk_time).days /
-                                                             (7.0 if self.use_weeks else AVG_DAYS_PER_MONTH))
-
-    def run(self):
-
-        rows = run_git_blame_command(self.blame_arguments)
-
-        self.__clear_blamechunk_info__()
-
-        #pylint: disable=W0201
-        for j in range(0, len(rows)):
-            row = rows[j].decode("utf-8", "replace").strip()
-            keyval = row.split(' ', 2)
-
-            if self.blamechunk_is_last:
-                self.__handle_blamechunk_content__(row)
-                self.__clear_blamechunk_info__()
-            elif keyval[0] == 'boundary':
-                self.blamechunk_is_prior = True
-            elif keyval[0] == 'author-mail':
-                self.blamechunk_email = keyval[1].lstrip('<').rstrip('>')
-            elif keyval[0] == 'author-time':
-                self.blamechunk_time = datetime.date.fromtimestamp(int(keyval[1]))
-            elif keyval[0] == 'filename':
-                self.blamechunk_is_last = True
-            elif Blame.is_revision(keyval[0]):
-                self.blamechunk_revision = keyval[0]
+        self.blame_stats.add(author, blame_line.filename)
 
 
+# TODO(dmu) HIGH: Recover support of in progress message
 PROGRESS_TEXT = N_("Checking how many rows belong to each author (Progress): {0:.0f}%")
 
 
@@ -143,7 +96,7 @@ class Blame(object):
                               interval.get_since(),
                               interval.get_until(), revision_range))))
 
-        for line_no, line in enumerate(lines):
+        for line in lines:
             line = line.strip().decode('unicode_escape', 'ignore')
             line = line.encode('latin-1', 'replace')
             line = line.decode('utf-8', 'replace').strip('"').strip("'").strip()
@@ -157,23 +110,7 @@ class Blame(object):
                 worker = BlameWorker(use_weeks, changes, blame_arguments,
                                      FileDiff.get_extension(line), self.blames, line.strip(),
                                      included_commit_hashes=commit_hashes)
-                worker.run()
 
-    @staticmethod
-    def output_progress(pos, length):
-        if sys.stdout.isatty() and format.is_interactive_format():
-            terminal.clear_row()
-            print(_(PROGRESS_TEXT).format(100 * pos / length), end="")
-            sys.stdout.flush()
-
-    @staticmethod
-    def is_revision(string):
-        revision = re.search("([0-9a-f]{40})", string)
-
-        if revision == None:
-            return False
-
-        return revision.group(1).strip()
 
     @staticmethod
     def get_stability(author, blamed_rows, changes):
@@ -189,14 +126,13 @@ class Blame(object):
 
     def get_summed_blames(self):
         summed_blames = {}
-        for i in self.blames.items():
-            if summed_blames.get(i[0][0], None) == None:
-                summed_blames[i[0][0]] = BlameEntry()
+        print(self.blame_stats.get_stats_by_author())
+        for author, value in self.blame_stats.get_stats_by_author().iteritems():
+            summed_blame = summed_blames.get(author)
 
-            summed_blames[i[0][0]].rows += i[1].rows
-            summed_blames[i[0][0]].skew += i[1].skew
-            summed_blames[i[0][0]].comments += i[1].comments
+            summed_blame.rows += value
 
+        print(summed_blames)
         return summed_blames
 
 __blame__ = None
