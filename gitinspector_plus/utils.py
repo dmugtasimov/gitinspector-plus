@@ -17,7 +17,13 @@
 
 import subprocess
 from itertools import chain
+import os
 import logging
+
+try:
+    from shlex import quote  # TODO(dmu) MEDIUM: Why trying shlex?
+except ImportError:
+    from pipes import quote
 
 
 logger = logging.getLogger(__name__)
@@ -39,12 +45,35 @@ class CustomPopen(subprocess.Popen):
         self.wait()
 
 
+class InDirectory(object):
+
+    def __init__(self, directory):
+        self.pre_directory = None
+        self.directory = directory
+
+    @staticmethod
+    def chdir(directory):
+        logger.debug('change dir: {}'.format(directory))
+        os.chdir(directory)
+
+    def __enter__(self):
+        current_directory = os.getcwd()
+        if current_directory != os.path.abspath(self.directory):
+            self.pre_directory = current_directory
+            self.chdir(self.directory)
+
+    def __exit__(self, type, value, traceback):
+        if self.pre_directory:
+            self.chdir(self.pre_directory)
+
+
 def run_command(command_definition):
     command_text = ' '.join(command_definition)
     logger.debug(command_text)
     with CustomPopen(command_definition, bufsize=1, stdout=subprocess.PIPE) as process:
         if process.stdout:
-            return [line.rstrip('\r\n') for line in process.stdout.readlines()]
+            return [line.decode('utf-8', 'replace').rstrip('\r\n')
+                    for line in process.stdout.readlines()]
         else:
             raise Exception('No output from: {}'. format(command_text))
 
@@ -78,3 +107,14 @@ def get_revision_range(revision_start=None, revision_end='HEAD'):
         return revision_start + '..' + revision_end
     else:
         return revision_end
+
+
+def get_since_option(since):
+    return '--since=' + quote(since) if since else None
+
+
+def get_until_option(until):
+    return '--until=' + quote(until) if until else None
+
+
+REVISION_END_DEFAULT = 'HEAD'

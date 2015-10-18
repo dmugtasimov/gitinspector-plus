@@ -30,9 +30,10 @@ import os
 import sys
 from collections import namedtuple
 
-from gitinspector_plus.renderers.text import ChangesTextRenderer, render_blame_text
+from gitinspector_plus.renderers.text import render_changes_text, render_blame_text
 from gitinspector_plus.extractors.blame import calculate_blame_stats
-from gitinspector_plus.changes import Changes
+from gitinspector_plus.extractors.changes import Changes
+from gitinspector_plus.utils import InDirectory, REVISION_END_DEFAULT
 from gitinspector_plus.extractors.configuration import get_git_config_options
 from gitinspector_plus import (basedir, blame, changes, extensions, filtering,
                                format, interval, metrics, outputable, responsibilities, terminal,
@@ -145,15 +146,19 @@ class ForgivingArgumentParser(argparse.ArgumentParser):
         return args
 
 
-def extract(self):
-    working_directory = os.getcwd()
-    os.chdir(args.repository)
-    git_config_options = get_git_config_options(commandline_options, skip=('log_level',))
-    os.chdir(working_directory)
+def extract(repository_directory, hard=False, since=None, until=None, revision_start=None,
+            revision_end=REVISION_END_DEFAULT):
+    changes = Changes(hard=hard, since=since, until=until, revision_start=revision_start,
+                      revision_end=revision_end)
 
+    with InDirectory(repository_directory):
+        changes.process()
 
-def render():
-    pass
+    return changes
+
+def render(changes):
+    render_changes_text(changes)
+
 
 def get_commandline_options():
     return (
@@ -206,7 +211,7 @@ def get_commandline_options():
                                   'revision (inclusive), any proper git revision is '
                                   'applicable')),
         Argument(args=('--revision-end',),
-                 kwargs=dict(default='HEAD', dest='revision_end',
+                 kwargs=dict(default=REVISION_END_DEFAULT, dest='revision_end',
                              help='only show statistics for commits starting from this '
                                   'revision (exclusive), any proper git revision is '
                                   'applicable')),
@@ -257,14 +262,18 @@ def main():
 
     logging.basicConfig(level=args.log_level, format='> %(message)s')
 
-    working_directory = os.getcwd()
-    os.chdir(args.repository)
-    git_config_options = get_git_config_options(commandline_options, skip=('log_level',))
-    os.chdir(working_directory)
+    with InDirectory(directory=args.repository):
+        git_config_options = get_git_config_options(commandline_options, skip=('log_level',))
 
     parser.set_defaults(**git_config_options)
     args = parser.parse_args()
 
+    changes = extract(repository_directory=args.repository, hard=args.hard, since=args.since,
+                      until=args.until, revision_start=args.revision_start,
+                      revision_end=args.revision_end)
+
+    render(changes)
+    return
     runner = Runner(repo=args.repository, grading=args.grading, hard=args.hard,
                     list_file_types=args.list_file_types, include_metrics=args.metrics,
                     responsibilities=args.responsibilities, use_weeks=args.weeks,

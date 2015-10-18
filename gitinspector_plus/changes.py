@@ -31,11 +31,9 @@ from cachetools import cachedmethod
 from gitinspector_plus.localization import N_
 from gitinspector_plus.outputable import Outputable
 from gitinspector_plus import extensions
-from gitinspector_plus import filtering
 from gitinspector_plus import format
 from gitinspector_plus import gravatar
 from gitinspector_plus import interval
-from gitinspector_plus.utils import run_git_log_command, get_revision_range
 
 
 class FileDiff:
@@ -71,94 +69,11 @@ class FileDiff:
         return False
 
 
-class Commit:
-    def __init__(self, string):
-        self.filediffs = []
-        commit_line = string.split("|")
-
-        if commit_line.__len__() == 4:
-            self.date = commit_line[0]
-            self.sha = commit_line[1]
-            self.author = commit_line[2].strip()
-            self.email = commit_line[3].strip()
-
-    def add_filediff(self, filediff):
-        self.filediffs.append(filediff)
-
-    def get_filediffs(self):
-        return self.filediffs
-
-    @staticmethod
-    def get_author_and_email(string):
-        commit_line = string.split("|")
-
-        if commit_line.__len__() == 4:
-            return (commit_line[2].strip(), commit_line[3].strip())
-
-    @staticmethod
-    def is_commit_line(string):
-        return string.split("|").__len__() == 4
-
-
 class AuthorInfo:
     email = None
     insertions = 0
     deletions = 0
     commits = 0
-
-
-REVISION_END_DEFAULT = 'HEAD'
-
-
-def read_commits(hard, changes, revision_start=None, revision_end=REVISION_END_DEFAULT):
-
-    revision_range = get_revision_range(revision_start, revision_end)
-    lines = run_git_log_command(
-        filter(None, (('--reverse', '--pretty=%cd|%H|%aN|%aE',
-                      '--stat=100000,8192', '--no-merges', '-w', interval.get_since(),
-                      interval.get_until(), '--date=short') +
-                      (('-C', '-C', '-M') if hard else ()) + (revision_range,))))
-
-    commit = None
-    found_valid_extension = False
-    is_filtered = False
-    commits = []
-
-    for i in lines:
-        j = i.strip().decode("unicode_escape", "ignore")
-        j = j.encode("latin-1", "replace")
-        j = j.decode("utf-8", "replace")
-
-        if Commit.is_commit_line(j):
-            (author, email) = Commit.get_author_and_email(j)
-            changes.emails_by_author[author] = email
-            changes.authors_by_email[email] = author
-
-        if Commit.is_commit_line(j) or i is lines[-1]:
-            if found_valid_extension:
-                commits.append(commit)
-
-            found_valid_extension = False
-            is_filtered = False
-            commit = Commit(j)
-
-            if Commit.is_commit_line(j) and \
-               (filtering.set_filtered(commit.author, "author") or \
-               filtering.set_filtered(commit.email, "email") or \
-               filtering.set_filtered(commit.sha, "revision") or \
-               filtering.set_filtered(commit.sha, "message")):
-                is_filtered = True
-
-        if FileDiff.is_filediff_line(j) and not \
-           filtering.set_filtered(FileDiff.get_filename(j)) and not is_filtered:
-            extensions.add_located(FileDiff.get_extension(j))
-
-            if FileDiff.is_valid_extension(j):
-                found_valid_extension = True
-                filediff = FileDiff(j)
-                commit.add_filediff(filediff)
-
-    return commits
 
 
 class Changes(object):
@@ -179,8 +94,8 @@ class Changes(object):
     @property
     @cachedmethod(operator.attrgetter('cache'))
     def commits(self):
-        commits = read_commits(self.hard, self, revision_start=self.revision_start,
-                               revision_end=self.revision_end)
+        #commits = extract_changes(self.hard, self, revision_start=self.revision_start,
+        #                          revision_end=self.revision_end)
 
         if commits:
             if interval.has_interval():
