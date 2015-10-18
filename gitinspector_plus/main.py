@@ -1,22 +1,21 @@
 #!/usr/bin/env python
-# coding: utf-8
+# Copyright (c) 2012-2015 Ejwa Software. All rights reserved.
+# Copyright (c) 2015 Dmitry Mugtasimov. All rights reserved.
 #
-# Copyright © 2012-2015 Ejwa Software. All rights reserved.
+# This file is part of gitinspector_plus.
 #
-# This file is part of gitinspector.
-#
-# gitinspector is free software: you can redistribute it and/or modify
+# gitinspector_plus is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
 # the Free Software Foundation, either version 3 of the License, or
 # (at your option) any later version.
 #
-# gitinspector is distributed in the hope that it will be useful,
+# gitinspector_plus is distributed in the hope that it will be useful,
 # but WITHOUT ANY WARRANTY; without even the implied warranty of
 # MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with gitinspector. If not, see <http://www.gnu.org/licenses/>.
+# along with gitinspector_plus. If not, see <http://www.gnu.org/licenses/>.
 
 from __future__ import absolute_import
 from __future__ import print_function
@@ -27,7 +26,6 @@ localization.init()
 
 import logging
 import argparse
-import atexit
 import os
 import sys
 from collections import namedtuple
@@ -35,8 +33,8 @@ from collections import namedtuple
 from gitinspector_plus.renderers.text import ChangesTextRenderer, render_blame_text
 from gitinspector_plus.extractors.blame import calculate_blame_stats
 from gitinspector_plus.changes import Changes
-from gitinspector_plus.config import GitConfigArg
-from gitinspector_plus import (basedir, blame, changes, clone, config, extensions, filtering,
+from gitinspector_plus.extractors.configuration import get_git_config_options
+from gitinspector_plus import (basedir, blame, changes, extensions, filtering,
                                format, interval, metrics, outputable, responsibilities, terminal,
                                timeline)
 from gitinspector_plus.version import __version__
@@ -147,158 +145,149 @@ class ForgivingArgumentParser(argparse.ArgumentParser):
         return args
 
 
+def extract(self):
+    working_directory = os.getcwd()
+    os.chdir(args.repository)
+    git_config_options = get_git_config_options(commandline_options, skip=('log_level',))
+    os.chdir(working_directory)
+
+
+def render():
+    pass
+
+def get_commandline_options():
+    return (
+        Argument(args=('-f', '--file-types'),
+                 kwargs=dict(metavar='EXTENSIONS', dest='file_types',
+                             default='java,c,cc,cpp,h,hh,hpp,py,glsl,rb,js,sql',
+                             help='a comma separated list of file extensions to include when '
+                                  'computing statistics. Specifying * includes files with no '
+                                  'extension, while ** includes all files')),
+        Argument(args=('-F', '--format'),
+                 kwargs=dict(dest='format', default='text',
+                             choices=('html', 'htmlembedded', 'text', 'xml'),
+                             help='define in which format output should be generated')),
+        Argument(args=('--grading',),
+                 kwargs=dict(action='store_true',
+                             help='show statistics and information in a way that is formatted '
+                                  'for grading of student projects; this is the same as '
+                                  'supplying the options -HlmrTw')),
+        Argument(args=('-H', '--hard'),
+                 kwargs=dict(action='store_true', dest='hard',
+                             help='dtrack rows and look for duplicates harder; this can be '
+                                  'quite slow with big repositories')),
+        Argument(args=('-l', '--list-file-types'),
+                 kwargs=dict(action='store_true', dest='list_file_types',
+                             help='list all the file extensions available in the current '
+                                  'branch of the repository')),
+        Argument(args=('-L', '--localize-output'),
+                 kwargs=dict(action='store_true', dest='localize_output',
+                             help='list all the file extensions available in the current '
+                                  'branch of the repository')),
+        Argument(args=('-m', '--metrics'),
+                 kwargs=dict(action='store_true', dest='metrics',
+                             help='include checks for certain metrics during the analysis of '
+                                  'commits')),
+        Argument(args=('-r', '--responsibilities'),
+                 kwargs=dict(action='store_true', dest='responsibilities',
+                             help='show which files the different authors seem most '
+                                  'responsible for')),
+        Argument(args=('--since',),
+                 kwargs=dict(metavar='DATE', default=None,
+                             help='only show statistics for commits more recent than '
+                                  'a specific date')),
+        Argument(args=('--until',),
+                 kwargs=dict(metavar='DATE', default=None,
+                             help='only show statistics for commits older than a specific '
+                                  'date')),
+        Argument(args=('--revision-start',),
+                 kwargs=dict(default=None, dest='revision_start',
+                             help='only show statistics for commits starting from this '
+                                  'revision (inclusive), any proper git revision is '
+                                  'applicable')),
+        Argument(args=('--revision-end',),
+                 kwargs=dict(default='HEAD', dest='revision_end',
+                             help='only show statistics for commits starting from this '
+                                  'revision (exclusive), any proper git revision is '
+                                  'applicable')),
+        Argument(args=('-T', '--timeline'),
+                 kwargs=dict(action='store_true', dest='timeline',
+                             help='show commit timeline, including author names')),
+        Argument(args=('-w', '--weeks'),
+                 kwargs=dict(action='store_true', dest='weeks',
+                             help='show all statistical information in weeks instead of in '
+                                  'months')),
+        Argument(args=('-x', '--exclude'),
+                 kwargs=dict(metavar='PATTERN', action='append', dest='exclude',
+                             help='an exclusion pattern describing the file paths, revisions, '
+                                  'revisions with certain commit messages, author names or '
+                                  'author emails that should be excluded from the statistics; '
+                                  'can be specified multiple times')),
+        Argument(args=('--log-level',), kwargs=dict(dest='log_level', default='INFO',
+                                                    help='Not configurable via git config '
+                                                         'options')),
+    )
+
+
 def main():
     terminal.check_terminal_encoding()
     terminal.set_stdin_encoding()
 
     check_python_version()
 
-    try:
-        parser = argparse.ArgumentParser(
-            description='List information about the repository in REPOSITORY. If no repository is '
-                        'specified, the current directory is used. If multiple repositories are '
-                        'given, information will be fetched from the last repository specified.',
-            epilog='gitinspector_plus will filter statistics to only include commits that modify, '
-                   'add or remove one of the specified extensions, see -f or --file-types for '
-                   'more information. gitinspector_plus requires that the git executable is '
-                   'available in your PATH. Please, report gitinspector_plus bugs to '
-                   'dmugtasimov@gmail.com.',
-            formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description='List information about the repository in REPOSITORY. If no repository is '
+                    'specified, the current directory is used. If multiple repositories are '
+                    'given, information will be fetched from the last repository specified.',
+        epilog='gitinspector_plus will filter statistics to only include commits that modify, '
+               'add or remove one of the specified extensions, see -f or --file-types for '
+               'more information. gitinspector_plus requires that the git executable is '
+               'available in your PATH. Please, report gitinspector_plus bugs to '
+               'dmugtasimov@gmail.com.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-        parser.add_argument('repository', metavar='REPOSITORY', nargs='?', default='.')
-        arguments = (
-            Argument(args=('-f', '--file-types'),
-                     kwargs=dict(metavar='EXTENSIONS', dest='file_types',
-                                 default='java,c,cc,cpp,h,hh,hpp,py,glsl,rb,js,sql',
-                                 help='a comma separated list of file extensions to include when '
-                                      'computing statistics. Specifying * includes files with no '
-                                      'extension, while ** includes all files')),
-            Argument(args=('-F', '--format'),
-                     kwargs=dict(dest='format', default='text',
-                                 choices=('html', 'htmlembedded', 'text', 'xml'),
-                                 help='define in which format output should be generated')),
-            Argument(args=('--grading',),
-                     kwargs=dict(action='store_true',
-                                 help='show statistics and information in a way that is formatted '
-                                      'for grading of student projects; this is the same as '
-                                      'supplying the options -HlmrTw')),
-            Argument(args=('-H', '--hard'),
-                     kwargs=dict(action='store_true', dest='hard',
-                                 help='dtrack rows and look for duplicates harder; this can be '
-                                      'quite slow with big repositories')),
-            Argument(args=('-l', '--list-file-types'),
-                     kwargs=dict(action='store_true', dest='list_file_types',
-                                 help='list all the file extensions available in the current '
-                                      'branch of the repository')),
-            Argument(args=('-L', '--localize-output'),
-                     kwargs=dict(action='store_true', dest='localize_output',
-                                 help='list all the file extensions available in the current '
-                                      'branch of the repository')),
-            Argument(args=('-m', '--metrics'),
-                     kwargs=dict(action='store_true', dest='metrics',
-                                 help='include checks for certain metrics during the analysis of '
-                                      'commits')),
-            Argument(args=('-r', '--responsibilities'),
-                     kwargs=dict(action='store_true', dest='responsibilities',
-                                 help='show which files the different authors seem most '
-                                      'responsible for')),
-            Argument(args=('--since',),
-                     kwargs=dict(metavar='DATE', default=None,
-                                 help='only show statistics for commits more recent than '
-                                      'a specific date')),
-            Argument(args=('--until',),
-                     kwargs=dict(metavar='DATE', default=None,
-                                 help='only show statistics for commits older than a specific '
-                                      'date')),
-            Argument(args=('--revision-start',),
-                     kwargs=dict(default=None, dest='revision_start',
-                                 help='only show statistics for commits starting from this '
-                                      'revision (inclusive), any proper git revision is '
-                                      'applicable')),
-            Argument(args=('--revision-end',),
-                     kwargs=dict(default='HEAD', dest='revision_end',
-                                 help='only show statistics for commits starting from this '
-                                      'revision (exclusive), any proper git revision is '
-                                      'applicable')),
-            Argument(args=('-T', '--timeline'),
-                     kwargs=dict(action='store_true', dest='timeline',
-                                 help='show commit timeline, including author names')),
-            Argument(args=('-w', '--weeks'),
-                     kwargs=dict(action='store_true', dest='weeks',
-                                 help='show all statistical information in weeks instead of in '
-                                      'months')),
-            Argument(args=('-x', '--exclude'),
-                     kwargs=dict(metavar='PATTERN', action='append', dest='exclude',
-                                 help='an exclusion pattern describing the file paths, revisions, '
-                                      'revisions with certain commit messages, author names or '
-                                      'author emails that should be excluded from the statistics; '
-                                      'can be specified multiple times')),
-            Argument(args=('--log-level',), kwargs=dict(dest='log_level', default='INFO')),
-        )
+    parser.add_argument('repository', metavar='REPOSITORY', nargs='?', default='.')
 
-        git_config_args = []
-        for argument in arguments:
-            parser.add_argument(*argument.args, **argument.kwargs)
+    commandline_options = get_commandline_options()
+    for commandline_option in commandline_options:
+        parser.add_argument(*commandline_option.args, **commandline_option.kwargs)
 
-            option_strings = filter(lambda s: s.startswith('--'), argument.args)
-            if len(option_strings) == 1:
-                option_string = option_strings[0]
-            else:
-                raise ValueError('Could not get option string for '
-                                 'option: {}'.format(argument.args))
+    parser.add_argument('--version', action='version', version=__version__)
+    args = parser.parse_args()
 
-            action = argument.kwargs.get('action')
-            if action in ('store_true', 'store_false'):
-                action_type = bool
-            else:
-                action_type = None
-            git_config_args.append(GitConfigArg(name=option_string.lstrip('-'), type=action_type))
+    logging.basicConfig(level=args.log_level, format='> %(message)s')
 
-        parser.add_argument('--version', action='version', version=__version__)
+    working_directory = os.getcwd()
+    os.chdir(args.repository)
+    git_config_options = get_git_config_options(commandline_options, skip=('log_level',))
+    os.chdir(working_directory)
 
-        args = parser.parse_args()
-        # Try to clone the repo or return the same directory and bail out
-        repo = clone.create(args.repository)
-        git_configuration = config.get_git_configuration(repo, git_config_args)
-        parser.set_defaults(**git_configuration)
+    parser.set_defaults(**git_config_options)
+    args = parser.parse_args()
 
-        args = parser.parse_args()
+    runner = Runner(repo=args.repository, grading=args.grading, hard=args.hard,
+                    list_file_types=args.list_file_types, include_metrics=args.metrics,
+                    responsibilities=args.responsibilities, use_weeks=args.weeks,
+                    timeline=args.timeline, localize_output=args.localize_output,
+                    format=args.format, revision_start=args.revision_start,
+                    revision_end=args.revision_end)
 
-        logging.basicConfig(level=args.log_level, format='> %(message)s')
+    extensions.define(args.file_types)
+    if not format.select(args.format):
+        raise format.InvalidFormatError(_('specified output format not supported.'))
 
-        runner = Runner(repo=repo, grading=args.grading, hard=args.hard,
-                        list_file_types=args.list_file_types, include_metrics=args.metrics,
-                        responsibilities=args.responsibilities, use_weeks=args.weeks,
-                        timeline=args.timeline, localize_output=args.localize_output,
-                        format=args.format, revision_start=args.revision_start,
-                        revision_end=args.revision_end)
+    if args.since:
+        interval.set_since(args.since)
 
-        extensions.define(args.file_types)
-        if not format.select(args.format):
-            raise format.InvalidFormatError(_('specified output format not supported.'))
+    if args.until:
+        interval.set_until(args.until)
 
-        if args.since:
-            interval.set_since(args.since)
-
-        if args.until:
-            interval.set_until(args.until)
-
-        if args.exclude:
-            filtering.clear()
-            for item in args.exclude:
-                filtering.add(item)
-
-    except (filtering.InvalidRegExpError, format.InvalidFormatError) as exception:
-        print(sys.argv[0], "\b:", exception.msg, file=sys.stderr)
-        print(_('Try: {0} --help for more information.').format(sys.argv[0]), file=sys.stderr)
-        return 2
+    if args.exclude:
+        filtering.clear()
+        for item in args.exclude:
+            filtering.add(item)
 
     runner.output()
-
-
-@atexit.register
-def cleanup():
-    clone.delete()
 
 
 if __name__ == "__main__":

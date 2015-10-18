@@ -1,3 +1,20 @@
+# Copyright (c) 2015 Dmitry Mugtasimov. All rights reserved.
+#
+# This file is part of gitinspector_plus.
+#
+# gitinspector_plus is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# gitinspector_plus is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with gitinspector_plus. If not, see <http://www.gnu.org/licenses/>.
+
 import subprocess
 from itertools import chain
 import logging
@@ -50,6 +67,10 @@ def run_git_ls_tree_command(arguments):
 
 def run_git_blame_command(arguments):
     return run_git_command(tuple(chain(('blame',), arguments)))
+
+
+def run_git_config_command(arguments):
+    return run_git_command(tuple(chain(('config',), arguments)))
 
 
 def get_revision_range(revision_start=None, revision_end='HEAD'):
