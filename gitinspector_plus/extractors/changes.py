@@ -24,6 +24,10 @@ from gitinspector_plus.utils import get_revision_range, run_git_log_command, get
     REVISION_END_DEFAULT
 
 
+class AddLineException(Exception):
+    pass
+
+
 class FileDiff(object):
 
     INSERTIONS_DELETIONS_REGEX = re.compile(r'^ +(\d+|Bin)')
@@ -52,15 +56,15 @@ class FileDiff(object):
                     deletions = insertions_deletions.count('-')
                     changes = int(group_1)
                     if int(group_1) != insertions + deletions:
-                        raise ValueError('Total changes of {} do not match sum of insertions ({}) '
-                                         'and deletions ({})'.format(changes, insertions,
+                        raise ValueError(u'Total changes of {} do not match sum of insertions '
+                                         u'({}) and deletions ({})'.format(changes, insertions,
                                                                      deletions))
                     return cls(line=line,
                                filepath=splitted_line[0].strip(),
                                insertions=insertions,
                                deletions=deletions)
             else:
-                raise ValueError('Unexpected syntax of change details: {}'.format(line))
+                raise ValueError(u'Unexpected syntax of change details: {}'.format(line))
 
 
 class Commit(object):
@@ -84,14 +88,14 @@ class Commit(object):
         self.hash = hash
         self.author = author
         self.email = email
-        self.author_email = '{} ({})'.format(author, email)
+        self.author_email = u'{} ({})'.format(author, email)
         self.files_changed = 0
         self.insertions = 0
         self.deletions = 0
-        self.changes = 0
+        self.total_changes = 0
         self.file_diffs = []
 
-    def feed(self, line):
+    def add_line(self, line):
         if not line:
             # Empty line is fine too
             return True
@@ -101,7 +105,7 @@ class Commit(object):
             self.files_changed = int(m.group('files_changed'))
             self.insertions = int(m.group('insertions'))
             self.deletions = int(m.group('deletions'))
-            self.changes = self.insertions + self.deletions
+            self.total_changes = self.insertions + self.deletions
             return True
 
         file_diff = FileDiff.build_instance_or_none(line)
@@ -109,7 +113,11 @@ class Commit(object):
             self.file_diffs.append(file_diff)
             return True
 
-        return False
+        raise AddLineException()
+
+
+def count_changed_files(commits):
+    return len(set(file_diff.filepath for commit in commits for file_diff in commit.file_diffs))
 
 
 class AuthorInformation(object):
@@ -120,7 +128,7 @@ class AuthorInformation(object):
         self.commits = []
         self.insertions = 0
         self.deletions = 0
-        self.changes = 0
+        self.total_changes = 0
 
     def append_commit(self, commit):
         self.commits.append(commit)
@@ -129,11 +137,15 @@ class AuthorInformation(object):
 
     def add_insertions(self, insertions):
         self.insertions += insertions
-        self.changes += insertions
+        self.total_changes += insertions
 
     def add_deletions(self, deletions):
         self.deletions += deletions
-        self.changes += deletions
+        self.total_changes += deletions
+
+    @property
+    def files_changed(self):
+        return count_changed_files(self.commits)
 
 
 class Changes(object):
@@ -151,7 +163,7 @@ class Changes(object):
         self.commits = []
         self.insertions = 0
         self.deletions = 0
-        self.changes = 0
+        self.total_changes = 0
 
         self.author_information = {}
 #        self.email_by_author = {}
@@ -164,11 +176,15 @@ class Changes(object):
 
     def add_insertions(self, insertions):
         self.insertions += insertions
-        self.changes += insertions
+        self.total_changes += insertions
 
     def add_deletions(self, deletions):
         self.deletions += deletions
-        self.changes += deletions
+        self.total_changes += deletions
+
+    @property
+    def files_changed(self):
+        return count_changed_files(self.commits)
 
     def process(self):
 
@@ -182,22 +198,26 @@ class Changes(object):
         is_filtered = False
 
         commit = None
-        lines_iterator = chain(lines, (u'END MARKER',))
+        line = None
+        lines_iterator = iter(lines)
         while True:
-            if commit:
-                for line in lines_iterator:
-                    fed = commit.feed(line)
-                    if not fed:
-                        self.author_information.setdefault(
-                            commit.author_email,
-                            AuthorInformation(commit.author, commit.email)).append_commit(commit)
-                        self.append_commit(commit)
-                        commit = Commit.build_instance_or_none(line)
-            else:
-                try:
+            try:
+                while not commit:
                     commit = Commit.build_instance_or_none(lines_iterator.next())
-                except StopIteration:
+
+                while True:
+                    line = lines_iterator.next()
+                    commit.add_line(line)
+            except (StopIteration, AddLineException) as e:
+                if commit:
+                    self.author_information.setdefault(
+                        commit.author_email,
+                        AuthorInformation(commit.author, commit.email)).append_commit(commit)
+                    self.append_commit(commit)
+                if isinstance(e, StopIteration):
                     break
+                elif line:
+                    commit = Commit.build_instance_or_none(line)
 
         #for line in lines:
 

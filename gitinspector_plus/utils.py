@@ -75,7 +75,7 @@ def run_command(command_definition):
             return [line.decode('utf-8', 'replace').rstrip('\r\n')
                     for line in process.stdout.readlines()]
         else:
-            raise Exception('No output from: {}'. format(command_text))
+            raise Exception(u'No output from: {}'. format(command_text))
 
 
 def run_git_command(arguments):

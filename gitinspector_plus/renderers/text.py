@@ -2,8 +2,8 @@ from __future__ import print_function
 
 import textwrap
 import sys
+from terminaltables.base_table import BaseTable
 
-from gitinspector_plus.renderers.base import BaseRenderer
 from gitinspector_plus import terminal
 from gitinspector_plus.changes import HISTORICAL_INFO_TEXT, NO_COMMITED_FILES_TEXT
 from gitinspector_plus.blame import BLAME_INFO_TEXT
@@ -11,33 +11,33 @@ from gitinspector_plus import format
 
 
 def render_changes_text(changes):
-
-    if changes.author_information:
-        print(textwrap.fill(_(HISTORICAL_INFO_TEXT) + ':', width=terminal.get_size()[0]) + '\n')
-        terminal.print_bold(terminal.ljust(_('Author'), 21) + terminal.rjust(_('Commits'), 13) +
-                        terminal.rjust(_('Insertions'), 14) + terminal.rjust(_('Deletions'), 15) +
-                terminal.rjust(_('% of changes'), 16))
-
-        changes_count = changes.changes
-        for author_key in sorted(changes.author_information.iterkeys()):
-            author_information = changes.author_information[author_key]
-            if changes_count:
-                percentage = 100 * author_information.changes / float(changes_count)
-            else:
-                percentage = None
-
-            author_string = author_information.author
-            print(terminal.ljust(author_string, 20)[
-                  0:20 - terminal.get_excess_column_count(author_string)], end=' ')
-            print(str(len(author_information.commits)).rjust(13), end=' ')
-            print(str(author_information.insertions).rjust(13), end=' ')
-            print(str(author_information.deletions).rjust(14), end=' ')
-            if percentage is None:
-                print('-'.rjust(15))
-            else:
-                print('{0:.2f}'.format(percentage).rjust(15))
-    else:
+    if not changes.author_information:
         print(_(NO_COMMITED_FILES_TEXT) + ".")
+        return
+
+    table_data = [
+        [_('Author'), _('Commits'), _('Files'), _('Insertions'), _('Deletions'), _('% of changes')],
+    ]
+
+    total_changes = changes.total_changes
+    for key, info in sorted(changes.author_information.iteritems(), key=lambda x: x[0]):
+        table_data.append(
+            [info.author, str(len(info.commits)), str(info.files_changed), str(info.insertions),
+             str(info.deletions),
+             '{0:.2f}'.format(100 * info.total_changes / float(total_changes)) if total_changes
+             else '-']
+        )
+
+    table = BaseTable(table_data)
+    table.inner_column_border = False
+    table.inner_heading_row_border = False
+    table.outer_border = False
+    table.padding_left = 0
+    table.padding_right = 2
+    table.justify_columns = {0: 'left', 1: 'right', 2: 'right', 3: 'right', 4: 'right', 5: 'right'}
+
+    print(textwrap.fill(_(HISTORICAL_INFO_TEXT) + ':', width=terminal.get_size()[0]) + '\n')
+    print(table.table)
 
 
 def render_blame_text(blame_stats):
