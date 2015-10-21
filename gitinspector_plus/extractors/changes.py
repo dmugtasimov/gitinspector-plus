@@ -17,12 +17,16 @@
 # along with gitinspector_plus. If not, see <http://www.gnu.org/licenses/>.
 
 import re
+import os
 from itertools import chain
 #from gitinspector_plus import filtering, extensions
 #from gitinspector_plus.changes import FileDiff
 from gitinspector_plus.utils import get_revision_range, run_git_log_command, get_since_option, get_until_option, \
     REVISION_END_DEFAULT
 
+
+INCLUDE_ALL_EXTENSIONS = '**'
+EMPTY_EXTENSION_MARKER = '*'
 
 class AddLineException(Exception):
     pass
@@ -38,6 +42,11 @@ class FileDiff(object):
         self.insertions = insertions
         self.deletions = deletions
         self.total_changes = self.insertions + self.deletions
+        self.binary = binary
+
+    @property
+    def extension(self):
+        return os.path.splitext(self.filepath)[1][1:]
 
     @classmethod
     def build_instance_or_none(cls, line):
@@ -73,45 +82,73 @@ class Commit(object):
                                r'(?:, (?P<deletions>\d+) deletions\(-\))')
 
     @classmethod
-    def build_instance_or_none(cls, line):
+    def build_instance_or_none(cls, line, included_extensions=INCLUDE_ALL_EXTENSIONS):
         splitted_line = line.split('|')
         if len(splitted_line) == 4:
             return cls(line=line,
                        date=splitted_line[0],
                        hash=splitted_line[1],
                        author=splitted_line[2],
-                       email=splitted_line[3])
+                       email=splitted_line[3],
+                       included_extensions=included_extensions)
 
-    def __init__(self, line, date, hash, author, email):
+    def __init__(self, line, date, hash, author, email, included_extensions=INCLUDE_ALL_EXTENSIONS):
         self.line = line
         self.date = date
         self.hash = hash
         self.author = author
         self.email = email
+
+        # TODO(dmu) HIGH: Refactor to ExtensionFilter()
+        self.allow_any_extension = included_extensions == INCLUDE_ALL_EXTENSIONS
+        if self.allow_any_extension:
+            self.included_extensions = ()
+        else:
+            self.included_extensions = set(included_extensions.split(','))
+        self.allow_empty_extension = (self.allow_any_extension or
+                                      EMPTY_EXTENSION_MARKER in self.included_extensions)
+
         self.author_email = u'{} ({})'.format(author, email)
-        self.files_changed = 0
-        self.insertions = 0
-        self.deletions = 0
-        self.total_changes = 0
+        self.extensions = set()
         self.file_diffs = []
+
+    @property
+    def insertions(self):
+        return sum(file_diff.insertions for file_diff in self.file_diffs)
+
+    @property
+    def deletions(self):
+        return sum(file_diff.deletions for file_diff in self.file_diffs)
+
+    @property
+    def total_changes(self):
+        return sum(file_diff.total_changes for file_diff in self.file_diffs)
+
+    @property
+    def files_changed(self):
+        return len(self.file_diffs)
+
+    def append_file_diff(self, file_diff):
+        extension = file_diff.extension
+        self.extensions.add(extension)
+
+        if (self.allow_any_extension or (extension == '' and self.allow_empty_extension) or
+                extension in self.included_extensions):
+            self.file_diffs.append(file_diff)
 
     def add_line(self, line):
         if not line:
             # Empty line is fine too
-            return True
+            return
 
         m = self.SUMMARY_REGEX.match(line)
         if m:
-            self.files_changed = int(m.group('files_changed'))
-            self.insertions = int(m.group('insertions'))
-            self.deletions = int(m.group('deletions'))
-            self.total_changes = self.insertions + self.deletions
-            return True
+            return
 
         file_diff = FileDiff.build_instance_or_none(line)
         if file_diff:
-            self.file_diffs.append(file_diff)
-            return True
+            self.append_file_diff(file_diff)
+            return
 
         raise AddLineException()
 
@@ -151,7 +188,7 @@ class AuthorInformation(object):
 class Changes(object):
 
     def __init__(self, hard=False, since=None, until=None, revision_start=None,
-                 revision_end=REVISION_END_DEFAULT):
+                 revision_end=REVISION_END_DEFAULT, included_extensions=INCLUDE_ALL_EXTENSIONS):
 
         self.hard = hard
         self.since = since
@@ -159,11 +196,13 @@ class Changes(object):
         self.revision_start = revision_start
         self.revision_end = revision_end
         self.revision_range = get_revision_range(self.revision_start, self.revision_end)
+        self.included_extensions = included_extensions
 
         self.commits = []
         self.insertions = 0
         self.deletions = 0
         self.total_changes = 0
+        self.extensions = set()
 
         self.author_information = {}
 #        self.email_by_author = {}
@@ -173,6 +212,7 @@ class Changes(object):
         self.commits.append(commit)
         self.add_insertions(commit.insertions)
         self.add_deletions(commit.deletions)
+        self.extensions.update(commit.extensions)
 
     def add_insertions(self, insertions):
         self.insertions += insertions
@@ -203,13 +243,14 @@ class Changes(object):
         while True:
             try:
                 while not commit:
-                    commit = Commit.build_instance_or_none(lines_iterator.next())
+                    commit = Commit.build_instance_or_none(lines_iterator.next(),
+                                                           self.included_extensions)
 
                 while True:
                     line = lines_iterator.next()
                     commit.add_line(line)
             except (StopIteration, AddLineException) as e:
-                if commit:
+                if commit and commit.files_changed:
                     self.author_information.setdefault(
                         commit.author_email,
                         AuthorInformation(commit.author, commit.email)).append_commit(commit)
@@ -217,7 +258,7 @@ class Changes(object):
                 if isinstance(e, StopIteration):
                     break
                 elif line:
-                    commit = Commit.build_instance_or_none(line)
+                    commit = Commit.build_instance_or_none(line, self.included_extensions)
 
         #for line in lines:
 
