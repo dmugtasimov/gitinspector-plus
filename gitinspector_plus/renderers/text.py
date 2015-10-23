@@ -16,14 +16,20 @@ def render_changes_text(changes):
         return
 
     table_data = [
-        [_('Author'), _('Commits'), _('Files'), _('Insertions'), _('Deletions'), _('% of changes')],
+        [_('Author'), _('Commits'), _('Files'), _('Insertions'), _('Deletions'),
+         _('Total changes'), _('% of changes')],
     ]
 
     total_changes = changes.total_changes
     for key, info in sorted(changes.author_information.iteritems(), key=lambda x: x[0]):
+        if info.author in changes.ambiguous_authors or info.email in changes.ambiguous_emails:
+            name = u'{} ({})'.format(info.author, info.email)
+        else:
+            name = info.author
+
         table_data.append(
-            [info.author, str(len(info.commits)), str(info.files_changed), str(info.insertions),
-             str(info.deletions),
+            [name, str(len(info.commits)), str(info.files_changed), str(info.insertions),
+             str(info.deletions), str(info.total_changes),
              '{0:.2f}'.format(100 * info.total_changes / float(total_changes)) if total_changes
              else '-']
         )
@@ -34,7 +40,8 @@ def render_changes_text(changes):
     table.outer_border = False
     table.padding_left = 0
     table.padding_right = 2
-    table.justify_columns = {0: 'left', 1: 'right', 2: 'right', 3: 'right', 4: 'right', 5: 'right'}
+    table.justify_columns = {0: 'left', 1: 'right', 2: 'right', 3: 'right', 4: 'right',
+                             5: 'right', 6: 'right'}
 
     print(textwrap.fill(_(HISTORICAL_INFO_TEXT) + ':', width=terminal.get_size()[0]) + '\n')
     print(table.table)

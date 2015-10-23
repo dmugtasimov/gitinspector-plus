@@ -271,8 +271,10 @@ class RepositoryStatistics(object):
         self.extensions = set()
 
         self.author_information = {}
-#        self.email_by_author = {}
-#        self.authors_by_email = {}
+        self.author_to_email_map = {}
+        self.email_to_author_map = {}
+        self.ambiguous_authors = set()
+        self.ambiguous_emails = set()
 
     def append_commit(self, commit):
         self.commits.append(commit)
@@ -317,9 +319,24 @@ class RepositoryStatistics(object):
             except (StopIteration, AddLineException) as e:
                 if commit and commit.files_changed and not any(cf.is_excluded(commit) for cf
                                                                in self.commit_filters):
-                    self.author_information.setdefault(
-                        commit.author_email,
-                        AuthorInformation(commit.author, commit.email)).append_commit(commit)
+                    author_information_item = self.author_information.get(commit.author_email)
+                    if not author_information_item:
+                        email_set = self.author_to_email_map.setdefault(commit.author, set())
+                        email_set.add(commit.email)
+                        if len(email_set) > 1:
+                            # Same author with different emails
+                            self.ambiguous_authors.add(commit.author)
+
+                        author_set = self.email_to_author_map.setdefault(commit.email, set())
+                        author_set.add(commit.author)
+                        if len(author_set) > 1:
+                            # Same email with different names
+                            self.ambiguous_emails.add(commit.email)
+
+                        author_information_item = AuthorInformation(commit.author, commit.email)
+                        self.author_information[commit.author_email] = author_information_item
+
+                    author_information_item.append_commit(commit)
                     self.append_commit(commit)
                 if isinstance(e, StopIteration):
                     break
