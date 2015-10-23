@@ -32,7 +32,8 @@ from collections import namedtuple
 
 from gitinspector_plus.renderers.text import render_changes_text, render_blame_text
 from gitinspector_plus.extractors.blame import calculate_blame_stats
-from gitinspector_plus.extractors.changes import Changes, INCLUDE_ALL_EXTENSIONS, EMPTY_EXTENSION_MARKER
+from gitinspector_plus.extractors.base import INCLUDE_ALL_EXTENSIONS, EMPTY_EXTENSION_MARKER, \
+    RepositoryStatistics
 from gitinspector_plus.utils import InDirectory, REVISION_END_DEFAULT
 from gitinspector_plus.extractors.configuration import get_git_config_options
 from gitinspector_plus import (basedir, blame, changes, extensions, filtering,
@@ -90,7 +91,7 @@ class Runner(object):
             outputable.output(outputable_result)
             all_changes = changes.get(self.hard)
         else:
-            changes_local = Changes(hard=self.hard,
+            changes_local = RepositoryStatistics(hard=self.hard,
                                     revision_start=self.revision_start,
                                     revision_end=self.revision_end)
             all_changes = changes_local
@@ -148,7 +149,7 @@ class ForgivingArgumentParser(argparse.ArgumentParser):
 
 def extract(repository_directory, hard=False, since=None, until=None, revision_start=None,
             revision_end=REVISION_END_DEFAULT, included_extensions=INCLUDE_ALL_EXTENSIONS):
-    changes_ = Changes(hard=hard, since=since, until=until, revision_start=revision_start,
+    changes_ = RepositoryStatistics(hard=hard, since=since, until=until, revision_start=revision_start,
                       revision_end=revision_end, included_extensions=included_extensions)
 
     with InDirectory(repository_directory):
