@@ -47,6 +47,58 @@ class ExtensionFilter(object):
                 extension in self.include_extensions)
 
 
+class ExcludeFilter(object):
+
+    FILE_TYPE = 'file'
+    TYPE_ATTR_MAP = {
+        'author': 'author',
+        'email': 'email',
+        'revision': 'revision',
+# TODO(dmu) LOW: Support original message filtering
+#        'message': '?',
+    }
+
+    @classmethod
+    def create_filter(cls, filter_expression):
+        filter_expression_splitted = filter_expression.split(':', 1)
+        if len(filter_expression_splitted) == 1:
+            filter_type, filter_regex = 'file', filter_expression
+        elif len(filter_expression_splitted) == 2:
+            filter_type, filter_regex = filter_expression_splitted
+        else:
+            raise ValueError('Invalid filter expression format')
+
+        if filter_type == cls.FILE_TYPE:
+            return ExcludeFileFilter(filter_type, filter_regex)
+        else:
+            return ExcludeCommitFilter(filter_type, filter_regex)
+
+    def __init__(self, filter_type, filter_regex):
+        self.filter_type = filter_type
+        self.filter_regex = re.compile(filter_regex)
+
+    def is_excluded(self, filtered_object):
+        raise NotImplementedError()
+
+
+class ExcludeCommitFilter(ExcludeFilter):
+
+    def __init__(self, filter_type, filter_regex):
+        super(ExcludeCommitFilter, self).__init__(filter_type, filter_regex)
+        self.commit_attr = self.TYPE_ATTR_MAP.get(self.filter_type)
+        if not self.commit_attr:
+            raise ValueError(u'Unknown filter type: {}'.format(self.filter_type))
+
+    def is_excluded(self, commit):
+        return bool(self.filter_regex.search(getattr(commit, self.commit_attr, '')))
+
+
+class ExcludeFileFilter(ExcludeFilter):
+
+    def is_excluded(self, file_path):
+        return bool(self.filter_regex.match(file_path))
+
+
 class FileDiff(object):
 
     INSERTIONS_DELETIONS_REGEX = re.compile(r'^ +(\d+|Bin)')
@@ -97,24 +149,26 @@ class Commit(object):
                                r'(?:, (?P<deletions>\d+) deletions\(-\))')
 
     @classmethod
-    def build_instance_or_none(cls, line, extension_filter=None):
+    def build_instance_or_none(cls, line, extension_filter=None, file_filters=()):
         splitted_line = line.split('|')
         if len(splitted_line) == 4:
             return cls(line=line,
                        date=splitted_line[0],
-                       hash=splitted_line[1],
+                       revision=splitted_line[1],
                        author=splitted_line[2],
                        email=splitted_line[3],
-                       extension_filter=extension_filter)
+                       extension_filter=extension_filter,
+                       file_filters=file_filters)
 
-    def __init__(self, line, date, hash, author, email, extension_filter=None):
+    def __init__(self, line, date, revision, author, email, extension_filter=None,
+                 file_filters=None):
         self.line = line
         self.date = date
-        self.hash = hash
+        self.revision = revision
         self.author = author
         self.email = email
         self.extension_filter = extension_filter
-
+        self.file_filters = file_filters
 
         self.author_email = u'{} ({})'.format(author, email)
         self.extensions = set()
@@ -140,7 +194,10 @@ class Commit(object):
         extension = file_diff.extension
         self.extensions.add(extension)
 
-        if self.extension_filter and self.extension_filter.is_allowed(extension):
+        if not (self.extension_filter and self.extension_filter.is_allowed(extension)):
+            return
+
+        if not any(ff.is_excluded(file_diff.file_path) for ff in self.file_filters):
             self.file_diffs.append(file_diff)
 
     def add_line(self, line):
@@ -195,7 +252,7 @@ class AuthorInformation(object):
 class RepositoryStatistics(object):
 
     def __init__(self, hard=False, since=None, until=None, revision_start=None,
-                 revision_end=REVISION_END_DEFAULT, extension_filter=None):
+                 revision_end=REVISION_END_DEFAULT, extension_filter=None, exclude_filters=()):
 
         self.hard = hard
         self.since = since
@@ -204,6 +261,8 @@ class RepositoryStatistics(object):
         self.revision_end = revision_end
         self.revision_range = get_revision_range(self.revision_start, self.revision_end)
         self.extension_filter = extension_filter
+        self.file_filters = [ef for ef in exclude_filters if isinstance(ef, ExcludeFileFilter)]
+        self.commit_filters = [ef for ef in exclude_filters if isinstance(ef, ExcludeCommitFilter)]
 
         self.commits = []
         self.insertions = 0
@@ -233,6 +292,9 @@ class RepositoryStatistics(object):
     def files_changed(self):
         return count_changed_files(self.commits)
 
+    def build_commit_or_none(self, line):
+        return Commit.build_instance_or_none(line, self.extension_filter, self.file_filters)
+
     def process_commits(self):
 
         lines = run_git_log_command(
@@ -241,23 +303,20 @@ class RepositoryStatistics(object):
                            get_until_option(self.until), '--date=short') +
                           (('-C', '-C', '-M') if self.hard else ()) + (self.revision_range,))))
 
-        found_valid_extension = False
-        is_filtered = False
-
         commit = None
         line = None
         lines_iterator = iter(lines)
         while True:
             try:
                 while not commit:
-                    commit = Commit.build_instance_or_none(lines_iterator.next(),
-                                                           self.extension_filter)
+                    commit = self.build_commit_or_none(lines_iterator.next())
 
                 while True:
                     line = lines_iterator.next()
                     commit.add_line(line)
             except (StopIteration, AddLineException) as e:
-                if commit and commit.files_changed:
+                if commit and commit.files_changed and not any(cf.is_excluded(commit) for cf
+                                                               in self.commit_filters):
                     self.author_information.setdefault(
                         commit.author_email,
                         AuthorInformation(commit.author, commit.email)).append_commit(commit)
@@ -265,37 +324,4 @@ class RepositoryStatistics(object):
                 if isinstance(e, StopIteration):
                     break
                 elif line:
-                    commit = Commit.build_instance_or_none(line, self.extension_filter)
-
-        #for line in lines:
-
-            """
-            if Commit.is_commit_line(line):
-                (author, email) = Commit.get_author_and_email(line)
-                changes.emails_by_author[author] = email
-                changes.authors_by_email[email] = author
-
-            if Commit.is_commit_line(line) or line is lines[-1]:
-                if found_valid_extension:
-                    commits.append(commit)
-
-                found_valid_extension = False
-                is_filtered = False
-                commit = Commit(line)
-
-                if Commit.is_commit_line(line) and \
-                   (filtering.set_filtered(commit.author, "author") or \
-                   filtering.set_filtered(commit.email, "email") or \
-                   filtering.set_filtered(commit.sha, "revision") or \
-                   filtering.set_filtered(commit.sha, "message")):
-                    is_filtered = True
-
-            if FileDiff.is_filediff_line(line) and not \
-               filtering.set_filtered(FileDiff.get_filename(line)) and not is_filtered:
-                extensions.add_located(FileDiff.get_extension(line))
-
-                if FileDiff.is_valid_extension(line):
-                    found_valid_extension = True
-                    filediff = FileDiff(line)
-                    commit.add_filediff(filediff)
-            """
+                    commit = self.build_commit_or_none(line)

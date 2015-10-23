@@ -33,7 +33,7 @@ from collections import namedtuple
 from gitinspector_plus.renderers.text import render_changes_text, render_blame_text
 from gitinspector_plus.extractors.blame import calculate_blame_stats
 from gitinspector_plus.extractors.base import INCLUDE_ALL_EXTENSIONS, EMPTY_EXTENSION_MARKER, \
-    RepositoryStatistics, ExtensionFilter
+    RepositoryStatistics, ExtensionFilter, ExcludeFilter
 from gitinspector_plus.utils import InDirectory, REVISION_END_DEFAULT
 from gitinspector_plus.extractors.configuration import get_git_config_options
 from gitinspector_plus import (basedir, blame, changes, extensions, filtering,
@@ -226,11 +226,13 @@ def get_commandline_options():
                              help='show all statistical information in weeks instead of in '
                                   'months')),
         Argument(args=('-x', '--exclude'),
-                 kwargs=dict(metavar='PATTERN', action='append', dest='exclude',
+                 kwargs=dict(metavar='PATTERN', action='append', dest='excludes',
                              help='an exclusion pattern describing the file paths, revisions, '
                                   'revisions with certain commit messages, author names or '
                                   'author emails that should be excluded from the statistics; '
-                                  'can be specified multiple times')),
+                                  'can be specified multiple times (examples: -x author:Dmitry '
+                                  '-x setup.py -x revision:d67a567192757509e853f2f3db0d2bf1783fa508'
+                                  ' -x email:admin@example.com)')),
         Argument(args=('--log-level',), kwargs=dict(dest='log_level', default='INFO',
                                                     help='Not configurable via git config '
                                                          'options')),
@@ -271,12 +273,19 @@ def main():
     parser.set_defaults(**git_config_options)
     args = parser.parse_args()
 
-    changes = extract(repository_directory=args.repository, hard=args.hard, since=args.since,
-                      until=args.until, revision_start=args.revision_start,
-                      revision_end=args.revision_end,
-                      extension_filter=ExtensionFilter(args.file_types))
+    exclude_filters = [ExcludeFilter.create_filter(fe) for exclude in args.excludes or ()
+                       for fe in exclude.split(',')]
 
-    render(changes)
+    repo_stats = RepositoryStatistics(hard=args.hard, since=args.since, until=args.until,
+                                      revision_start=args.revision_start,
+                                      revision_end=args.revision_end,
+                                      extension_filter=ExtensionFilter(args.file_types),
+                                      exclude_filters=exclude_filters)
+
+    with InDirectory(args.repository):
+        repo_stats.process_commits()
+
+    render(repo_stats)
     return
     runner = Runner(repo=args.repository, grading=args.grading, hard=args.hard,
                     list_file_types=args.list_file_types, include_metrics=args.metrics,
