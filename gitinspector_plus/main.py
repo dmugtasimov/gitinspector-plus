@@ -33,7 +33,7 @@ from collections import namedtuple
 from gitinspector_plus.renderers.text import render_changes_text, render_blame_text
 from gitinspector_plus.extractors.blame import calculate_blame_stats
 from gitinspector_plus.extractors.base import INCLUDE_ALL_EXTENSIONS, EMPTY_EXTENSION_MARKER, \
-    RepositoryStatistics
+    RepositoryStatistics, ExtensionFilter
 from gitinspector_plus.utils import InDirectory, REVISION_END_DEFAULT
 from gitinspector_plus.extractors.configuration import get_git_config_options
 from gitinspector_plus import (basedir, blame, changes, extensions, filtering,
@@ -148,12 +148,12 @@ class ForgivingArgumentParser(argparse.ArgumentParser):
 
 
 def extract(repository_directory, hard=False, since=None, until=None, revision_start=None,
-            revision_end=REVISION_END_DEFAULT, included_extensions=INCLUDE_ALL_EXTENSIONS):
+            revision_end=REVISION_END_DEFAULT, extension_filter=None):
     changes_ = RepositoryStatistics(hard=hard, since=since, until=until, revision_start=revision_start,
-                      revision_end=revision_end, included_extensions=included_extensions)
+                      revision_end=revision_end, extension_filter=extension_filter)
 
     with InDirectory(repository_directory):
-        changes_.process()
+        changes_.process_commits()
 
     return changes_
 
@@ -170,7 +170,7 @@ def get_commandline_options():
                              help=u'a comma separated list of file extensions to include when '
                                   u'computing statistics. Specifying {} includes files with no '
                                   u'extension, while {} includes all files'.format(
-                                    EMPTY_EXTENSION_MARKER, INCLUDE_ALL_EXTENSIONS))),
+                                  EMPTY_EXTENSION_MARKER, INCLUDE_ALL_EXTENSIONS))),
         Argument(args=('-F', '--format'),
                  kwargs=dict(dest='format', default='text',
                              choices=('html', 'htmlembedded', 'text', 'xml'),
@@ -273,7 +273,8 @@ def main():
 
     changes = extract(repository_directory=args.repository, hard=args.hard, since=args.since,
                       until=args.until, revision_start=args.revision_start,
-                      revision_end=args.revision_end, included_extensions=args.file_types)
+                      revision_end=args.revision_end,
+                      extension_filter=ExtensionFilter(args.file_types))
 
     render(changes)
     return

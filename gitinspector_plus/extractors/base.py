@@ -30,13 +30,30 @@ class AddLineException(Exception):
     pass
 
 
+class ExtensionFilter(object):
+
+    INCLUDE_ALL_EXTENSIONS = '**'
+    EMPTY_EXTENSION_MARKER = '*'
+
+    def __init__(self, include_extensions):
+        self.allow_any_extension = include_extensions == self.INCLUDE_ALL_EXTENSIONS
+        self.include_extensions = (() if self.allow_any_extension else
+                                   frozenset(include_extensions.split(',')))
+        self.allow_empty_extension = (self.allow_any_extension or
+                                      EMPTY_EXTENSION_MARKER in self.include_extensions)
+
+    def is_allowed(self, extension):
+        return (self.allow_any_extension or (extension == '' and self.allow_empty_extension) or
+                extension in self.include_extensions)
+
+
 class FileDiff(object):
 
     INSERTIONS_DELETIONS_REGEX = re.compile(r'^ +(\d+|Bin)')
 
-    def __init__(self, line, filepath, insertions=0, deletions=0, binary=False):
+    def __init__(self, line, file_path, insertions=0, deletions=0, binary=False):
         self.line = line
-        self.filepath = filepath
+        self.file_path = file_path
         self.insertions = insertions
         self.deletions = deletions
         self.total_changes = self.insertions + self.deletions
@@ -44,7 +61,7 @@ class FileDiff(object):
 
     @property
     def extension(self):
-        return os.path.splitext(self.filepath)[1][1:]
+        return os.path.splitext(self.file_path)[1][1:]
 
     @classmethod
     def build_instance_or_none(cls, line):
@@ -56,7 +73,7 @@ class FileDiff(object):
                 group_1 = m.group(1)
                 if group_1 == 'Bin':
                     return cls(line=line,
-                               filepath=splitted_line[0].strip(),
+                               file_path=splitted_line[0].strip(),
                                binary=True)
                 else:
                     insertions = insertions_deletions.count('+')
@@ -67,7 +84,7 @@ class FileDiff(object):
                                          u'({}) and deletions ({})'.format(changes, insertions,
                                                                      deletions))
                     return cls(line=line,
-                               filepath=splitted_line[0].strip(),
+                               file_path=splitted_line[0].strip(),
                                insertions=insertions,
                                deletions=deletions)
             else:
@@ -80,7 +97,7 @@ class Commit(object):
                                r'(?:, (?P<deletions>\d+) deletions\(-\))')
 
     @classmethod
-    def build_instance_or_none(cls, line, included_extensions=INCLUDE_ALL_EXTENSIONS):
+    def build_instance_or_none(cls, line, extension_filter=None):
         splitted_line = line.split('|')
         if len(splitted_line) == 4:
             return cls(line=line,
@@ -88,23 +105,16 @@ class Commit(object):
                        hash=splitted_line[1],
                        author=splitted_line[2],
                        email=splitted_line[3],
-                       included_extensions=included_extensions)
+                       extension_filter=extension_filter)
 
-    def __init__(self, line, date, hash, author, email, included_extensions=INCLUDE_ALL_EXTENSIONS):
+    def __init__(self, line, date, hash, author, email, extension_filter=None):
         self.line = line
         self.date = date
         self.hash = hash
         self.author = author
         self.email = email
+        self.extension_filter = extension_filter
 
-        # TODO(dmu) HIGH: Refactor to ExtensionFilter()
-        self.allow_any_extension = included_extensions == INCLUDE_ALL_EXTENSIONS
-        if self.allow_any_extension:
-            self.included_extensions = ()
-        else:
-            self.included_extensions = set(included_extensions.split(','))
-        self.allow_empty_extension = (self.allow_any_extension or
-                                      EMPTY_EXTENSION_MARKER in self.included_extensions)
 
         self.author_email = u'{} ({})'.format(author, email)
         self.extensions = set()
@@ -130,8 +140,7 @@ class Commit(object):
         extension = file_diff.extension
         self.extensions.add(extension)
 
-        if (self.allow_any_extension or (extension == '' and self.allow_empty_extension) or
-                extension in self.included_extensions):
+        if self.extension_filter and self.extension_filter.is_allowed(extension):
             self.file_diffs.append(file_diff)
 
     def add_line(self, line):
@@ -152,7 +161,7 @@ class Commit(object):
 
 
 def count_changed_files(commits):
-    return len(set(file_diff.filepath for commit in commits for file_diff in commit.file_diffs))
+    return len(set(file_diff.file_path for commit in commits for file_diff in commit.file_diffs))
 
 
 class AuthorInformation(object):
@@ -186,7 +195,7 @@ class AuthorInformation(object):
 class RepositoryStatistics(object):
 
     def __init__(self, hard=False, since=None, until=None, revision_start=None,
-                 revision_end=REVISION_END_DEFAULT, included_extensions=INCLUDE_ALL_EXTENSIONS):
+                 revision_end=REVISION_END_DEFAULT, extension_filter=None):
 
         self.hard = hard
         self.since = since
@@ -194,7 +203,7 @@ class RepositoryStatistics(object):
         self.revision_start = revision_start
         self.revision_end = revision_end
         self.revision_range = get_revision_range(self.revision_start, self.revision_end)
-        self.included_extensions = included_extensions
+        self.extension_filter = extension_filter
 
         self.commits = []
         self.insertions = 0
@@ -224,7 +233,7 @@ class RepositoryStatistics(object):
     def files_changed(self):
         return count_changed_files(self.commits)
 
-    def process(self):
+    def process_commits(self):
 
         lines = run_git_log_command(
             filter(None, (('--reverse', '--pretty=%cd|%H|%aN|%aE',
@@ -242,7 +251,7 @@ class RepositoryStatistics(object):
             try:
                 while not commit:
                     commit = Commit.build_instance_or_none(lines_iterator.next(),
-                                                           self.included_extensions)
+                                                           self.extension_filter)
 
                 while True:
                     line = lines_iterator.next()
@@ -256,7 +265,7 @@ class RepositoryStatistics(object):
                 if isinstance(e, StopIteration):
                     break
                 elif line:
-                    commit = Commit.build_instance_or_none(line, self.included_extensions)
+                    commit = Commit.build_instance_or_none(line, self.extension_filter)
 
         #for line in lines:
 
