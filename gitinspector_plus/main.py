@@ -31,6 +31,7 @@ import sys
 from collections import namedtuple
 
 from gitinspector_plus.renderers.text import TextRenderer, render_blame_text
+from gitinspector_plus.renderers.html import HTMLRenderer
 from gitinspector_plus.extractors.blame import calculate_blame_stats
 from gitinspector_plus.extractors.base import INCLUDE_ALL_EXTENSIONS, EMPTY_EXTENSION_MARKER, \
     RepositoryStatistics, ExtensionFilter, ExcludeFilter
@@ -49,8 +50,11 @@ TEXT_OUTPUT_FORMAT = 'text'
 XML_OUTPUT_FORMAT = 'xml'
 OUTPUT_FORMATS = (HTML_OUTPUT_FORMAT, HTML_EMDEDDED_OUTPUT_FORMAT, TEXT_OUTPUT_FORMAT,
                   XML_OUTPUT_FORMAT)
+
+# TODO(dmu) LOW: Support all original formats
 FORMAT_RENDERER_MAP = {
     TEXT_OUTPUT_FORMAT: TextRenderer,
+    HTML_OUTPUT_FORMAT: HTMLRenderer,
 }
 
 
@@ -162,7 +166,7 @@ def get_commandline_options():
                                   EMPTY_EXTENSION_MARKER, INCLUDE_ALL_EXTENSIONS))),
         Argument(args=('-F', '--format'),
                  kwargs=dict(dest='format', default='text',
-                             choices=OUTPUT_FORMATS,
+                             choices=FORMAT_RENDERER_MAP.keys(),
                              help='define in which format output should be generated')),
         Argument(args=('--grading',),
                  kwargs=dict(action='store_true',

@@ -46,7 +46,7 @@ setup(
         'Topic :: Software Development :: Version Control',
         'Topic :: Utilities'
     ],
-    install_requires=['cachetools==1.1.3', 'terminaltables==2.0.0'],
+    install_requires=['cachetools==1.1.3', 'terminaltables==2.0.0', 'Jinja2==2.8'],
     packages=find_packages(exclude=['tests']),
     package_data={'': ['html/*', 'translations/*']},
     data_files=[('share/doc/gitinspector_plus', glob('*.txt'))],
