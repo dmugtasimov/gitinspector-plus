@@ -5,46 +5,50 @@ import sys
 from terminaltables.base_table import BaseTable
 
 from gitinspector_plus import terminal
+from gitinspector_plus.renderers.base import BaseRenderer
 from gitinspector_plus.changes import HISTORICAL_INFO_TEXT, NO_COMMITED_FILES_TEXT
 from gitinspector_plus.blame import BLAME_INFO_TEXT
 from gitinspector_plus import format
 
 
-def render_changes_text(changes):
-    if not changes.author_information:
-        print(_(NO_COMMITED_FILES_TEXT) + ".")
-        return
+class TextRenderer(BaseRenderer):
 
-    table_data = [
-        [_('Author'), _('Commits'), _('Files'), _('Insertions'), _('Deletions'),
-         _('Total changes'), _('% of changes')],
-    ]
+    def render_commit_statistics(self, repo_stats):
+        if not repo_stats.author_information:
+            print(_(NO_COMMITED_FILES_TEXT) + ".")
+            return
 
-    total_changes = changes.total_changes
-    for key, info in sorted(changes.author_information.iteritems(), key=lambda x: x[0]):
-        if info.author in changes.ambiguous_authors or info.email in changes.ambiguous_emails:
-            name = u'{} ({})'.format(info.author, info.email)
-        else:
-            name = info.author
+        table_data = [
+            [_('Author'), _('Commits'), _('Files'), _('Insertions'), _('Deletions'),
+             _('Total changes'), _('% of changes')],
+        ]
 
-        table_data.append(
-            [name, str(len(info.commits)), str(info.files_changed), str(info.insertions),
-             str(info.deletions), str(info.total_changes),
-             '{0:.2f}'.format(100 * info.total_changes / float(total_changes)) if total_changes
-             else '-']
-        )
+        total_changes = repo_stats.total_changes
+        for key, info in sorted(repo_stats.author_information.iteritems(), key=lambda x: x[0]):
+            if (info.author in repo_stats.ambiguous_authors or
+                    info.email in repo_stats.ambiguous_emails):
+                name = u'{} ({})'.format(info.author, info.email)
+            else:
+                name = info.author
 
-    table = BaseTable(table_data)
-    table.inner_column_border = False
-    table.inner_heading_row_border = False
-    table.outer_border = False
-    table.padding_left = 0
-    table.padding_right = 2
-    table.justify_columns = {0: 'left', 1: 'right', 2: 'right', 3: 'right', 4: 'right',
-                             5: 'right', 6: 'right'}
+            table_data.append(
+                [name, str(len(info.commits)), str(info.files_changed), str(info.insertions),
+                 str(info.deletions), str(info.total_changes),
+                 '{0:.2f}'.format(100 * info.total_changes / float(total_changes)) if total_changes
+                 else '-']
+            )
 
-    print(textwrap.fill(_(HISTORICAL_INFO_TEXT) + ':', width=terminal.get_size()[0]) + '\n')
-    print(table.table)
+        table = BaseTable(table_data)
+        table.inner_column_border = False
+        table.inner_heading_row_border = False
+        table.outer_border = False
+        table.padding_left = 0
+        table.padding_right = 2
+        table.justify_columns = {0: 'left', 1: 'right', 2: 'right', 3: 'right', 4: 'right',
+                                 5: 'right', 6: 'right'}
+
+        print(textwrap.fill(_(HISTORICAL_INFO_TEXT) + ':', width=terminal.get_size()[0]) + '\n')
+        print(table.table)
 
 
 def render_blame_text(blame_stats):

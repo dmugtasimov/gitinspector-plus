@@ -30,7 +30,7 @@ import os
 import sys
 from collections import namedtuple
 
-from gitinspector_plus.renderers.text import render_changes_text, render_blame_text
+from gitinspector_plus.renderers.text import TextRenderer, render_blame_text
 from gitinspector_plus.extractors.blame import calculate_blame_stats
 from gitinspector_plus.extractors.base import INCLUDE_ALL_EXTENSIONS, EMPTY_EXTENSION_MARKER, \
     RepositoryStatistics, ExtensionFilter, ExcludeFilter
@@ -42,6 +42,16 @@ from gitinspector_plus import (basedir, blame, changes, extensions, filtering,
 from gitinspector_plus.version import __version__
 
 Argument = namedtuple('Argument', ('args', 'kwargs'))
+
+HTML_OUTPUT_FORMAT = 'html'
+HTML_EMDEDDED_OUTPUT_FORMAT = 'htmlembedded'
+TEXT_OUTPUT_FORMAT = 'text'
+XML_OUTPUT_FORMAT = 'xml'
+OUTPUT_FORMATS = (HTML_OUTPUT_FORMAT, HTML_EMDEDDED_OUTPUT_FORMAT, TEXT_OUTPUT_FORMAT,
+                  XML_OUTPUT_FORMAT)
+FORMAT_RENDERER_MAP = {
+    TEXT_OUTPUT_FORMAT: TextRenderer,
+}
 
 
 class Runner(object):
@@ -134,32 +144,11 @@ class Runner(object):
         os.chdir(previous_directory)
 
 
+# TODO(dmu) HIGH: Support Python 3.x
 def check_python_version():
-    if sys.version_info < (2, 7):
-        sys.exit(_('gitinspector_plus requires at least Python 2.7.x to run '
+    if sys.version_info < (2, 7) or sys.version_info >= (3,):
+        sys.exit(_('gitinspector_plus requires Python >= 2.7.x < 3.x version to run '
                    '(version {0} was found).').format(sys.version))
-
-
-class ForgivingArgumentParser(argparse.ArgumentParser):
-
-    def parse_args(self, args=None, namespace=None):
-        args, argv = self.parse_known_args(args, namespace)
-        return args
-
-
-def extract(repository_directory, hard=False, since=None, until=None, revision_start=None,
-            revision_end=REVISION_END_DEFAULT, extension_filter=None):
-    changes_ = RepositoryStatistics(hard=hard, since=since, until=until, revision_start=revision_start,
-                      revision_end=revision_end, extension_filter=extension_filter)
-
-    with InDirectory(repository_directory):
-        changes_.process_commits()
-
-    return changes_
-
-
-def render(changes_):
-    render_changes_text(changes_)
 
 
 def get_commandline_options():
@@ -173,7 +162,7 @@ def get_commandline_options():
                                   EMPTY_EXTENSION_MARKER, INCLUDE_ALL_EXTENSIONS))),
         Argument(args=('-F', '--format'),
                  kwargs=dict(dest='format', default='text',
-                             choices=('html', 'htmlembedded', 'text', 'xml'),
+                             choices=OUTPUT_FORMATS,
                              help='define in which format output should be generated')),
         Argument(args=('--grading',),
                  kwargs=dict(action='store_true',
@@ -285,7 +274,10 @@ def main():
     with InDirectory(args.repository):
         repo_stats.process_commits()
 
-    render(repo_stats)
+    renderer_class = FORMAT_RENDERER_MAP[args.format]
+    renderer = renderer_class()
+    renderer.render_commit_statistics(repo_stats)
+
     return
     runner = Runner(repo=args.repository, grading=args.grading, hard=args.hard,
                     list_file_types=args.list_file_types, include_metrics=args.metrics,
